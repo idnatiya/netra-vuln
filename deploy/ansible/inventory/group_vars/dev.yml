@@ -1,0 +1,5 @@
+# fakecentral on the laptop (Tailscale IP). Plain http is fine: Tailscale encrypts the link.
+vuln_agent_central_url: http://100.77.238.106:8080
+vuln_agent_client_id: dev
+# fakecentral accepts any enroll token. Real clients use an Ansible Vault value.
+vuln_agent_enroll_token: dev

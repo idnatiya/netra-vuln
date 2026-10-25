@@ -1,0 +1,16 @@
+# Throwaway MySQL for integration tests and the local dev loop (data on tmpfs).
+name: netra-vuln-dev
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: test
+      MYSQL_DATABASE: vuln
+    ports:
+      - "127.0.0.1:3317:3306"
+    tmpfs:
+      - /var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-ptest"]
+      interval: 2s
+      retries: 60

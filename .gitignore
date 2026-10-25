@@ -1,0 +1,24 @@
+# Build output
+/dist/
+
+# Dev data: raw reports from real VMs and fakecentral host tokens
+/dev-out/
+
+# Local secrets / env (commit only *.example)
+.env
+.env.*
+!.env.example
+
+# Ansible
+*.retry
+
+# Go test artifacts
+*.test
+*.out
+coverage.*
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
