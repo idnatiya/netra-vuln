@@ -107,6 +107,7 @@ type report struct {
 		Vulnerabilities []struct {
 			VulnerabilityID  string
 			PkgName          string
+			PkgPath          string
 			InstalledVersion string
 			FixedVersion     string
 			Severity         string
@@ -131,6 +132,7 @@ func Parse(r io.Reader) ([]domain.Finding, error) {
 				Type:             res.Type,
 				VulnerabilityID:  v.VulnerabilityID,
 				PkgName:          v.PkgName,
+				PkgPath:          v.PkgPath,
 				InstalledVersion: v.InstalledVersion,
 				FixedVersion:     v.FixedVersion,
 				Severity:         v.Severity,

@@ -1,4 +1,4 @@
-import type { FindingFilter, ScanConfig, TriageStatus } from '@/domain/models'
+import type { ComponentFilter, FindingFilter, ScanConfig, TriageStatus } from '@/domain/models'
 import { isValidClientName, triageNeedsNote } from '@/domain/rules'
 import { ApiError } from './errors'
 import type { Repositories } from './ports'
@@ -20,6 +20,7 @@ export function createUseCases(r: Repositories) {
     distribution: () => r.stats.distribution(),
 
     listFindings: (filter: FindingFilter) => r.findings.list({ ...filter, query: filter.query?.trim() || undefined }),
+    listComponents: (filter: ComponentFilter) => r.findings.components({ ...filter, query: filter.query?.trim() || undefined }),
     triageFinding: async (id: number, status: TriageStatus, note: string) => {
       const n = note.trim()
       if (triageNeedsNote(status) && !n) throw new ApiError('a note is required when accepting or dismissing a finding', 400)

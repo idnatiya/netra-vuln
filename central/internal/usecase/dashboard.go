@@ -61,6 +61,13 @@ func (d *Dashboard) Findings(ctx context.Context, f domain.FindingFilter) (domai
 	return d.Queries.Findings(ctx, f)
 }
 
+func (d *Dashboard) Components(ctx context.Context, f domain.FindingFilter) ([]domain.ComponentRow, error) {
+	if err := f.Normalize(); err != nil {
+		return nil, err
+	}
+	return d.Queries.Components(ctx, f)
+}
+
 func (d *Dashboard) Trend(ctx context.Context, clientName string, hostID int64, days int) ([]domain.TrendPoint, error) {
 	if days < 1 || days > 365 {
 		return nil, fmt.Errorf("%w: days must be 1-365", domain.ErrInvalid)

@@ -48,8 +48,8 @@ func (s *Store) HostRows(ctx context.Context, clientName string) ([]domain.HostR
 // likeEscaper escapes LIKE wildcards; MySQL's default escape character is '\'.
 var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 
-func (s *Store) Findings(ctx context.Context, f domain.FindingFilter) (domain.Page[domain.FindingRow], error) {
-	var page domain.Page[domain.FindingRow]
+// findingsFrom builds the FROM/WHERE shared by Findings and Components.
+func findingsFrom(f domain.FindingFilter) (string, []any) {
 	where := []string{"h.revoked_at IS NULL"}
 	var args []any
 	add := func(cond string, a ...any) { where = append(where, cond); args = append(args, a...) }
@@ -72,8 +72,16 @@ func (s *Store) Findings(ctx context.Context, f domain.FindingFilter) (domain.Pa
 		q := "%" + likeEscaper.Replace(f.Query) + "%"
 		add("(f.cve LIKE ? OR f.pkg LIKE ?)", q, q)
 	}
-	from := ` FROM findings f JOIN hosts h ON h.id = f.host_id JOIN clients c ON c.id = h.client_id WHERE ` +
-		strings.Join(where, " AND ")
+	if f.ComponentKind != "" {
+		add("f.component_kind = ? AND f.component = ?", string(f.ComponentKind), f.Component)
+	}
+	return ` FROM findings f JOIN hosts h ON h.id = f.host_id JOIN clients c ON c.id = h.client_id WHERE ` +
+		strings.Join(where, " AND "), args
+}
+
+func (s *Store) Findings(ctx context.Context, f domain.FindingFilter) (domain.Page[domain.FindingRow], error) {
+	var page domain.Page[domain.FindingRow]
+	from, args := findingsFrom(f)
 
 	if err := s.q.QueryRowContext(ctx, `SELECT COUNT(*)`+from, args...).Scan(&page.Total); err != nil {
 		return page, err
@@ -85,8 +93,8 @@ func (s *Store) Findings(ctx context.Context, f domain.FindingFilter) (domain.Pa
 		domain.SortLastSeen:  `f.last_seen DESC, f.id DESC`,
 	}[f.Sort]
 	rows, err := s.q.QueryContext(ctx, `SELECT f.id, f.host_id, c.name, h.hostname, f.target, f.type, f.cve,
-		f.pkg, f.installed_version, f.fixed_version, f.severity, f.title, f.status, f.note,
-		f.first_seen, f.last_seen, f.resolved_at`+from+` ORDER BY `+order+` LIMIT ? OFFSET ?`,
+		f.pkg, f.pkg_path, f.component_kind, f.component, f.installed_version, f.fixed_version, f.severity,
+		f.title, f.status, f.note, f.first_seen, f.last_seen, f.resolved_at`+from+` ORDER BY `+order+` LIMIT ? OFFSET ?`,
 		append(args, f.PageSize, (f.Page-1)*f.PageSize)...)
 	if err != nil {
 		return page, err
@@ -98,14 +106,46 @@ func (s *Store) Findings(ctx context.Context, f domain.FindingFilter) (domain.Pa
 		var note sql.NullString
 		var resolved sql.NullTime
 		if err := rows.Scan(&r.ID, &r.HostID, &r.ClientName, &r.Hostname, &r.Target, &r.Type, &r.CVE,
-			&r.Pkg, &r.InstalledVersion, &r.FixedVersion, &r.Severity, &r.Title, &r.Status, &note,
-			&r.FirstSeen, &r.LastSeen, &resolved); err != nil {
+			&r.Pkg, &r.PkgPath, &r.ComponentKind, &r.Component, &r.InstalledVersion, &r.FixedVersion, &r.Severity,
+			&r.Title, &r.Status, &note, &r.FirstSeen, &r.LastSeen, &resolved); err != nil {
 			return page, err
 		}
 		r.Note, r.ResolvedAt = note.String, nullTime(resolved)
 		page.Items = append(page.Items, r)
 	}
 	return page, rows.Err()
+}
+
+// maxComponentPackages caps the package names listed per component row.
+const maxComponentPackages = 20
+
+// Components groups matching findings per host and component, worst first.
+// ponytail: capped at 1000 rows without paging; add paging if a fleet ever exceeds it.
+func (s *Store) Components(ctx context.Context, f domain.FindingFilter) ([]domain.ComponentRow, error) {
+	from, args := findingsFrom(f)
+	rows, err := s.q.QueryContext(ctx, `SELECT f.host_id, c.name, h.hostname, f.component_kind, f.component,
+		SUBSTRING_INDEX(GROUP_CONCAT(DISTINCT f.pkg ORDER BY f.pkg SEPARATOR '\n'), '\n', ?),
+		COUNT(DISTINCT f.pkg), COUNT(*), COUNT(DISTINCT f.cve),
+		SUM(f.severity = 'CRITICAL'), SUM(f.severity = 'HIGH'), MIN(f.first_seen)`+from+`
+		GROUP BY f.host_id, c.name, h.hostname, f.component_kind, f.component
+		ORDER BY 10 DESC, 11 DESC, 8 DESC, f.component LIMIT 1000`,
+		append([]any{maxComponentPackages}, args...)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.ComponentRow{}
+	for rows.Next() {
+		var r domain.ComponentRow
+		var pkgs string
+		if err := rows.Scan(&r.HostID, &r.ClientName, &r.Hostname, &r.Kind, &r.Key, &pkgs,
+			&r.PkgCount, &r.Findings, &r.CVEs, &r.Critical, &r.High, &r.FirstSeen); err != nil {
+			return nil, err
+		}
+		r.Packages = strings.Split(pkgs, "\n")
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }
 
 // Trend sums, per UTC day, the last successful scan of each active host that day.

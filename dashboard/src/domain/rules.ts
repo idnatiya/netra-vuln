@@ -1,4 +1,4 @@
-import type { Host, Page, TriageStatus } from './models'
+import type { Component, Host, Page, TriageStatus } from './models'
 
 // Pure business rules shared by views. Thresholds mirror central's domain package.
 
@@ -40,4 +40,25 @@ const CLIENT_NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/
 
 export function isValidClientName(name: string): boolean {
   return CLIENT_NAME.test(name)
+}
+
+export interface ComponentLabel {
+  title: string
+  detail: string
+  /** Extra step after upgrading, e.g. a reboot for the kernel. */
+  hint?: string
+}
+
+const basename = (p: string) => p.split('/').filter(Boolean).pop() ?? p
+
+/** How a component reads in the UI: OS groups by their packages, apps and binaries by their path. */
+export function componentLabel(c: Pick<Component, 'kind' | 'key' | 'packages' | 'pkgCount'>): ComponentLabel {
+  if (c.kind === 'os') {
+    if (c.packages.length && c.packages.every((p) => p.startsWith('linux-'))) {
+      return { title: 'Linux kernel', detail: c.key, hint: 'reboot after upgrade' }
+    }
+    const more = c.pkgCount - Math.min(c.packages.length, 2)
+    return { title: c.packages.slice(0, 2).join(', ') + (more > 0 ? ` +${more}` : ''), detail: c.key }
+  }
+  return { title: basename(c.key), detail: c.key }
 }

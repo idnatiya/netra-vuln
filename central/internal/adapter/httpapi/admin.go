@@ -32,6 +32,7 @@ type Dashboard interface {
 	Clients(ctx context.Context) ([]domain.ClientRow, error)
 	Hosts(ctx context.Context, clientName string) ([]domain.HostRow, error)
 	Findings(ctx context.Context, f domain.FindingFilter) (domain.Page[domain.FindingRow], error)
+	Components(ctx context.Context, f domain.FindingFilter) ([]domain.ComponentRow, error)
 	Trend(ctx context.Context, clientName string, hostID int64, days int) ([]domain.TrendPoint, error)
 	OldestCVEs(ctx context.Context, clientName string, limit int) ([]domain.CVEAge, error)
 	Distribution(ctx context.Context) (domain.Distribution, error)
@@ -60,6 +61,7 @@ func (s *Server) MountAdmin(auth AdminAuth, dash Dashboard) {
 	g.Get("/hosts", need, a.hosts)
 	g.Post("/hosts/:id/revoke", need, a.revokeHost)
 	g.Get("/findings", need, a.findings)
+	g.Get("/components", need, a.components)
 	g.Patch("/findings/:id", need, a.triage)
 	g.Get("/trend", need, a.trend)
 	g.Get("/oldest-cves", need, a.oldestCVEs)
@@ -221,17 +223,38 @@ func (a *adminRoutes) revokeHost(c fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-func (a *adminRoutes) findings(c fiber.Ctx) error {
+// findingFilter reads the filter query parameters shared by /findings and /components.
+func findingFilter(c fiber.Ctx) (domain.FindingFilter, error) {
 	f := domain.FindingFilter{
 		Client:          c.Query("client"),
 		Severity:        c.Query("severity"),
 		Status:          domain.TriageStatus(c.Query("status")),
 		Query:           c.Query("q"),
+		ComponentKind:   domain.ComponentKind(c.Query("component_kind")),
+		Component:       c.Query("component"),
 		IncludeResolved: c.Query("include_resolved") == "true",
 		Sort:            c.Query("sort"),
 	}
 	var err error
-	if f.HostID, err = intQuery(c, "host_id", 0); err != nil {
+	f.HostID, err = intQuery(c, "host_id", 0)
+	return f, err
+}
+
+func (a *adminRoutes) components(c fiber.Ctx) error {
+	f, err := findingFilter(c)
+	if err != nil {
+		return err
+	}
+	rows, err := a.dash.Components(c.Context(), f)
+	if err != nil {
+		return err
+	}
+	return c.JSON(mapSlice(rows, toComponentDTO))
+}
+
+func (a *adminRoutes) findings(c fiber.Ctx) error {
+	f, err := findingFilter(c)
+	if err != nil {
 		return err
 	}
 	page, err := intQuery(c, "page", 1)

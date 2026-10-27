@@ -82,6 +82,9 @@ type findingDTO struct {
 	Type             string     `json:"type"`
 	CVE              string     `json:"cve"`
 	Pkg              string     `json:"pkg"`
+	PkgPath          string     `json:"pkg_path"`
+	ComponentKind    string     `json:"component_kind"`
+	Component        string     `json:"component"`
 	InstalledVersion string     `json:"installed_version"`
 	FixedVersion     string     `json:"fixed_version"`
 	Severity         string     `json:"severity"`
@@ -91,6 +94,29 @@ type findingDTO struct {
 	FirstSeen        time.Time  `json:"first_seen"`
 	LastSeen         time.Time  `json:"last_seen"`
 	ResolvedAt       *time.Time `json:"resolved_at"`
+}
+
+type componentDTO struct {
+	HostID    int64     `json:"host_id"`
+	Client    string    `json:"client"`
+	Hostname  string    `json:"hostname"`
+	Kind      string    `json:"kind"`
+	Key       string    `json:"key"`
+	Packages  []string  `json:"packages"`
+	PkgCount  int       `json:"pkg_count"`
+	Findings  int       `json:"findings"`
+	CVEs      int       `json:"cves"`
+	Critical  int       `json:"critical"`
+	High      int       `json:"high"`
+	FirstSeen time.Time `json:"first_seen"`
+}
+
+func toComponentDTO(r domain.ComponentRow) componentDTO {
+	return componentDTO{
+		HostID: r.HostID, Client: r.ClientName, Hostname: r.Hostname, Kind: string(r.Kind), Key: r.Key,
+		Packages: r.Packages, PkgCount: r.PkgCount, Findings: r.Findings, CVEs: r.CVEs,
+		Critical: r.Critical, High: r.High, FirstSeen: r.FirstSeen,
+	}
 }
 
 type pageDTO[T any] struct {
@@ -173,7 +199,8 @@ func toHostDTO(h domain.HostRow) hostDTO {
 func toFindingDTO(f domain.FindingRow) findingDTO {
 	return findingDTO{
 		ID: f.ID, HostID: f.HostID, Client: f.ClientName, Hostname: f.Hostname,
-		Target: f.Target, Type: f.Type, CVE: f.CVE, Pkg: f.Pkg,
+		Target: f.Target, Type: f.Type, CVE: f.CVE, Pkg: f.Pkg, PkgPath: f.PkgPath,
+		ComponentKind: string(f.ComponentKind), Component: f.Component,
 		InstalledVersion: f.InstalledVersion, FixedVersion: f.FixedVersion,
 		Severity: f.Severity, Title: f.Title, Status: string(f.Status), Note: f.Note,
 		FirstSeen: f.FirstSeen, LastSeen: f.LastSeen, ResolvedAt: f.ResolvedAt,

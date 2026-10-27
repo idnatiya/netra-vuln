@@ -21,6 +21,7 @@ const (
 const (
 	maxHostname     = 255
 	maxTarget       = 512
+	maxPkgPath      = 1024
 	maxType         = 64
 	maxCVE          = 64
 	maxPkg          = 255
@@ -37,16 +38,22 @@ type Finding struct {
 	Type             string
 	CVE              string
 	Pkg              string
+	PkgPath          string // file the package was found in; empty for OS packages
 	InstalledVersion string
 	FixedVersion     string
 	Severity         string
 	Title            string
 }
 
-// Key identifies a finding on a host across scans.
+// Key identifies a finding on a host across scans. PkgPath is only mixed in
+// when set, so keys of findings without one stay as before.
 func (f Finding) Key() []byte {
 	h := sha256.New()
-	for _, s := range []string{f.CVE, f.Pkg, f.InstalledVersion, f.Target} {
+	parts := []string{f.CVE, f.Pkg, f.InstalledVersion, f.Target}
+	if f.PkgPath != "" {
+		parts = append(parts, f.PkgPath)
+	}
+	for _, s := range parts {
 		h.Write([]byte(s))
 		h.Write([]byte{0})
 	}
@@ -98,6 +105,7 @@ func (r *Report) Normalize() {
 		f.Type = truncate(f.Type, maxType)
 		f.CVE = truncate(f.CVE, maxCVE)
 		f.Pkg = truncate(f.Pkg, maxPkg)
+		f.PkgPath = truncate(f.PkgPath, maxPkgPath)
 		f.InstalledVersion = truncate(f.InstalledVersion, maxVersion)
 		f.FixedVersion = truncate(f.FixedVersion, maxFixedVersion)
 		f.Title = truncate(f.Title, maxTitle)

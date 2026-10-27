@@ -33,6 +33,7 @@ type Finding struct {
 	Type             string `json:"type"`
 	VulnerabilityID  string `json:"vulnerability_id"`
 	PkgName          string `json:"pkg_name"`
+	PkgPath          string `json:"pkg_path,omitempty"`
 	InstalledVersion string `json:"installed_version"`
 	FixedVersion     string `json:"fixed_version"`
 	Severity         string `json:"severity"`

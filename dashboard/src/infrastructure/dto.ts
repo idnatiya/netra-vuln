@@ -1,5 +1,5 @@
 import type {
-  Client, Count, CVEAge, Finding, Host, Overview, ScanConfig, Session, Severity, TrendPoint, TriageStatus,
+  Client, Component, ComponentKind, Count, CVEAge, Finding, Host, Overview, ScanConfig, Session, Severity, TrendPoint, TriageStatus,
 } from '@/domain/models'
 
 // Shapes returned by central's admin API (snake_case) and their mapping to domain types.
@@ -54,14 +54,26 @@ export const toHost = (d: HostDTO): Host => ({
 
 export interface FindingDTO {
   id: number, host_id: number, client: string, hostname: string, target: string, type: string, cve: string,
-  pkg: string, installed_version: string, fixed_version: string, severity: Severity, title: string,
-  status: TriageStatus, note: string, first_seen: string, last_seen: string, resolved_at: string | null
+  pkg: string, pkg_path: string, component_kind: ComponentKind, component: string, installed_version: string,
+  fixed_version: string, severity: Severity, title: string, status: TriageStatus, note: string, first_seen: string,
+  last_seen: string, resolved_at: string | null
 }
 export const toFinding = (d: FindingDTO): Finding => ({
   id: d.id, hostId: d.host_id, client: d.client, hostname: d.hostname, target: d.target, type: d.type,
-  cve: d.cve, pkg: d.pkg, installedVersion: d.installed_version, fixedVersion: d.fixed_version,
+  cve: d.cve, pkg: d.pkg, pkgPath: d.pkg_path, componentKind: d.component_kind, component: d.component,
+  installedVersion: d.installed_version, fixedVersion: d.fixed_version,
   severity: d.severity, title: d.title, status: d.status, note: d.note, firstSeen: date(d.first_seen),
   lastSeen: date(d.last_seen), resolvedAt: maybeDate(d.resolved_at),
+})
+
+export interface ComponentDTO {
+  host_id: number, client: string, hostname: string, kind: ComponentKind, key: string, packages: string[],
+  pkg_count: number, findings: number, cves: number, critical: number, high: number, first_seen: string
+}
+export const toComponent = (d: ComponentDTO): Component => ({
+  hostId: d.host_id, client: d.client, hostname: d.hostname, kind: d.kind, key: d.key, packages: d.packages,
+  pkgCount: d.pkg_count, findings: d.findings, cves: d.cves, critical: d.critical, high: d.high,
+  firstSeen: date(d.first_seen),
 })
 
 export interface PageDTO<T> { items: T[], total: number, page: number, page_size: number }

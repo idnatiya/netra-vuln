@@ -110,7 +110,7 @@ ca_file: ""                  # optional, for a custom CA
    ```
    `severity`, `ignore_unfixed`, `skip_dirs`, and `timeout` can be overridden by config from central, but the agent ONLY accepts those fields. Reject any other field.
 3. Decode the output with `json.NewDecoder` (streaming) into a slim struct containing only:
-   `Target, Type, VulnerabilityID, PkgName, InstalledVersion, FixedVersion, Severity, Title`.
+   `Target, Type, VulnerabilityID, PkgName, PkgPath, InstalledVersion, FixedVersion, Severity, Title`.
 4. Add host metadata:
    `hostname, os_family, os_name, os_version, arch, kernel_running, uptime_seconds, reboot_required (check /var/run/reboot-required or needs-restarting -r), unattended_upgrades_enabled (or dnf-automatic on RHEL), agent_version, trivy_version, scanned_at, scan_duration_seconds`.
 5. Send the payload gzipped to `POST /api/v1/report`.
@@ -150,6 +150,7 @@ Code layout mirrors the agent: `central/cmd/central` + `central/internal/{domain
 
 ### Security
 - Tokens are stored hashed (e.g. SHA-256), not in plaintext
+- Tokens stay required over Tailscale: the tailnet is shared by all clients' VMs, so network reachability does not prove which client a host belongs to. Enroll tokens are per client (created once, kept in Ansible Vault); host tokens are issued to and stored by the agent itself.
 - Validate that a host can only write to its own client
 - Simple per-token rate limiting
 - Request size limits, read/write timeouts
@@ -160,7 +161,7 @@ Code layout mirrors the agent: `central/cmd/central` + `central/internal/{domain
 - `enroll_tokens` (id, client_id, token_hash, created_at, revoked_at)
 - `hosts` (id, client_id, hostname, host_token_hash, os_family, os_name, os_version, arch, kernel_running, agent_version, trivy_version, reboot_required, auto_update_enabled, last_heartbeat_at, last_scan_at, last_scan_status, created_at, revoked_at; UNIQUE(client_id, hostname))
 - `scans` (id, host_id, scanned_at, status, error_message, duration_seconds, total, critical, high, trivy_version)
-- `findings` (id, host_id, target, type, cve, pkg, installed_version, fixed_version, severity, title, first_seen, last_seen, resolved_at NULL, status ENUM('open','accepted','false_positive') default 'open', note; UNIQUE(host_id, finding_key) where finding_key = SHA-256(cve, pkg, installed_version, target), because a 5-column UNIQUE exceeds InnoDB's 3072-byte key limit with utf8mb4)
+- `findings` (id, host_id, target, type, cve, pkg, pkg_path, component_kind, component, installed_version, fixed_version, severity, title, first_seen, last_seen, resolved_at NULL, status ENUM('open','accepted','false_positive') default 'open', note; UNIQUE(host_id, finding_key) where finding_key = SHA-256(cve, pkg, installed_version, target[, pkg_path when set]), because a 5-column UNIQUE exceeds InnoDB's 3072-byte key limit with utf8mb4)
 - Indexes needed for dashboard queries
 
 ### Report ingest logic (in a single transaction)
@@ -178,6 +179,7 @@ Admin-only SPA; admins see every client (no per-client logins). Views:
 4. Clients: create (enroll token shown once), per-client scan-config overrides
 
 Rules:
+- Components (`domain.Finding.Component`, stored at ingest and refreshed every scan) group findings into one upgrade action each: `os` = OS packages with the same installed version (one source package, e.g. all `linux-*` kernel pieces; shown as "Linux kernel" + reboot hint), `app` = language packages under one application folder (from Trivy's `PkgPath`, cut before `vendor/`, `node_modules/`, `site-packages/`, `.venv/`, `WEB-INF/`…; package caches like `.m2`/`.cache` group as the cache), `binary` = one Go/Rust binary. The Findings view defaults to the Components tab; "View" drills into that component's findings.
 - "Open" = `resolved_at IS NULL AND status = 'open'`. Triage (`accepted` / `false_positive`) needs a note and survives re-scans; it never deletes data.
 - Auth: `admin_users` (bcrypt) + `admin_sessions` (SHA-256 token hash, 12h). Cookie `vuln_session`: HttpOnly, Secure, SameSite=Strict, Path=/api/admin. State-changing requests must send a same-origin `Origin` (CSRF). Login limited per client IP; behind Caddy set `CENTRAL_TRUST_PROXY=true`.
 - Admins are created with the CLI only: `central admin create|passwd|list` (no sign-up).
@@ -195,7 +197,7 @@ Rules:
   - Run `vuln-agent check`; enable timers once packaging provides the systemd units
   - Example inventory grouped per client with different SSH user/port/key per group and `ProxyJump`
 - Local dev: `make dev` runs MySQL (127.0.0.1:3317, tmpfs, `deploy/dev/mysql.compose.yml`) + central (127.0.0.1:18080) + the dashboard (http://localhost:5173) in one terminal; Ctrl+C stops all, and if either process dies the other is stopped too. It migrates and seeds admin `admin` once (password in `dev-out/admin-password`). `make help` lists targets; `make dev-down` drops the dev DB; admin CLI via `make central ARGS="..."`.
-- Sample VM loop over Tailscale: `make dev CENTRAL_ADDR=<laptop-tailnet-ip>:8080` (or `make fakecentral`), then `make deploy-dev` / `make scan-dev`.
+- Sample VM loop over Tailscale: `make dev CENTRAL_ADDR=<laptop-tailnet-ip>:18080`, create the client in the dashboard, then `make scan-dev ARGS="-e @<enroll-vars.yml>"` (a mode-600 file with `vuln_agent_enroll_token`, never committed; add `-e vuln_agent_force_enroll=true` after the dev DB was reset).
 - Tests: `make test` (unit, MySQL tests skip), `make test-integration` (starts MySQL, sets `TEST_MYSQL_DSN`).
 - Manual install without Ansible: `.deb`/`.rpm` package or tarball + `install.sh`, fill in `config.yaml`, `vuln-agent enroll`, `vuln-agent check`.
 

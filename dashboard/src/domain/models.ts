@@ -80,6 +80,9 @@ export interface Finding {
   type: string
   cve: string
   pkg: string
+  pkgPath: string
+  componentKind: ComponentKind
+  component: string
   installedVersion: string
   fixedVersion: string
   severity: Severity
@@ -93,17 +96,40 @@ export interface Finding {
 
 export type FindingSort = 'severity' | 'first_seen' | 'last_seen'
 
+/** What a group of findings is: OS packages of one source, an app folder, or a binary. */
+export type ComponentKind = 'os' | 'app' | 'binary'
+
+/** Findings of one component on one host: one upgrade action. */
+export interface Component {
+  hostId: number
+  client: string
+  hostname: string
+  kind: ComponentKind
+  key: string
+  packages: string[]
+  pkgCount: number
+  findings: number
+  cves: number
+  critical: number
+  high: number
+  firstSeen: Date
+}
+
 export interface FindingFilter {
   client?: string
   hostId?: number
   severity?: Severity
   status?: TriageStatus
   query?: string
+  componentKind?: ComponentKind
+  component?: string
   includeResolved?: boolean
   sort?: FindingSort
   page: number
   pageSize: number
 }
+
+export type ComponentFilter = Omit<FindingFilter, 'sort' | 'page' | 'pageSize'>
 
 export interface Page<T> {
   items: T[]

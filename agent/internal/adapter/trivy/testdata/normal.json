@@ -46,6 +46,22 @@
         }
       ]
     },
-    {"Target": "Python", "Class": "lang-pkgs", "Type": "python-pkg"}
+    {"Target": "Python", "Class": "lang-pkgs", "Type": "python-pkg"},
+    {
+      "Target": "Node.js",
+      "Class": "lang-pkgs",
+      "Type": "node-pkg",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2024-0004",
+          "PkgName": "devalue",
+          "PkgPath": "var/www/shop/node_modules/devalue/package.json",
+          "InstalledVersion": "5.9.0",
+          "FixedVersion": "5.9.3",
+          "Severity": "HIGH",
+          "Title": "devalue: prototype pollution"
+        }
+      ]
+    }
   ]
 }

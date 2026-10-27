@@ -68,6 +68,7 @@ func decodeReport(b []byte) (domain.Report, error) {
 			Type:             f.Type,
 			CVE:              f.VulnerabilityID,
 			Pkg:              f.PkgName,
+			PkgPath:          f.PkgPath,
 			InstalledVersion: f.InstalledVersion,
 			FixedVersion:     f.FixedVersion,
 			Severity:         f.Severity,

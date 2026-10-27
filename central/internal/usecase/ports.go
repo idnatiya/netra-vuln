@@ -61,6 +61,8 @@ type DashboardQueries interface {
 	// HostRows lists hosts (revoked included) with open-finding counts; clientName "" = all.
 	HostRows(ctx context.Context, clientName string) ([]domain.HostRow, error)
 	Findings(ctx context.Context, f domain.FindingFilter) (domain.Page[domain.FindingRow], error)
+	// Components groups the findings matching f (Sort and paging ignored).
+	Components(ctx context.Context, f domain.FindingFilter) ([]domain.ComponentRow, error)
 	Trend(ctx context.Context, clientName string, hostID int64, since time.Time) ([]domain.TrendPoint, error)
 	OldestCVEs(ctx context.Context, clientName string, limit int) ([]domain.CVEAge, error)
 	Distribution(ctx context.Context) (domain.Distribution, error)

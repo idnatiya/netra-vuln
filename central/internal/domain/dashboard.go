@@ -120,11 +120,13 @@ type FindingRow struct {
 	ClientName string
 	Hostname   string
 	Finding
-	Status     TriageStatus
-	Note       string
-	FirstSeen  time.Time
-	LastSeen   time.Time
-	ResolvedAt *time.Time
+	ComponentKind ComponentKind
+	Component     string
+	Status        TriageStatus
+	Note          string
+	FirstSeen     time.Time
+	LastSeen      time.Time
+	ResolvedAt    *time.Time
 }
 
 // Finding list sort orders.
@@ -138,8 +140,10 @@ type FindingFilter struct {
 	Client          string
 	HostID          int64
 	Severity        string
-	Status          TriageStatus // "" = any
-	Query           string       // substring of CVE or package
+	Status          TriageStatus  // "" = any
+	Query           string        // substring of CVE or package
+	ComponentKind   ComponentKind // with Component: only findings of that component
+	Component       string
 	IncludeResolved bool
 	Sort            string
 	Page            int // 1-based
@@ -177,7 +181,31 @@ func (f *FindingFilter) Normalize() error {
 	if len(f.Query) > 128 {
 		return fmt.Errorf("%w: query too long", ErrInvalid)
 	}
+	switch f.ComponentKind {
+	case "", ComponentOS, ComponentApp, ComponentBinary:
+	default:
+		return fmt.Errorf("%w: component_kind %q", ErrInvalid, f.ComponentKind)
+	}
+	if len(f.Component) > maxComponent {
+		return fmt.Errorf("%w: component too long", ErrInvalid)
+	}
 	return nil
+}
+
+// ComponentRow sums the findings of one component on one host.
+type ComponentRow struct {
+	HostID     int64
+	ClientName string
+	Hostname   string
+	Kind       ComponentKind
+	Key        string
+	Packages   []string // distinct package names, capped
+	PkgCount   int
+	Findings   int
+	CVEs       int
+	Critical   int
+	High       int
+	FirstSeen  time.Time // oldest finding
 }
 
 type Page[T any] struct {

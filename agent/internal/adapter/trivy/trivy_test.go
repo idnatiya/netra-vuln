@@ -24,7 +24,7 @@ func TestParseNormal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 3 {
+	if len(got) != 4 {
 		t.Fatalf("len = %d", len(got))
 	}
 	want := domain.Finding{
@@ -37,6 +37,9 @@ func TestParseNormal(t *testing.T) {
 	}
 	if got[2].Type != "gobinary" || got[2].Target != "usr/local/bin/app" {
 		t.Fatalf("got %+v", got[2])
+	}
+	if got[3].PkgPath != "var/www/shop/node_modules/devalue/package.json" {
+		t.Fatalf("got %+v", got[3])
 	}
 }
 
@@ -127,7 +130,7 @@ func fakeRunner(t *testing.T, mode string) *Runner {
 func TestScanExec(t *testing.T) {
 	r := fakeRunner(t, "ok")
 	got, err := r.Scan(context.Background(), domain.DefaultScanConfig())
-	if err != nil || len(got) != 3 {
+	if err != nil || len(got) != 4 {
 		t.Fatalf("got %d, %v", len(got), err)
 	}
 	if left, _ := os.ReadDir(r.TmpDir); len(left) != 0 {

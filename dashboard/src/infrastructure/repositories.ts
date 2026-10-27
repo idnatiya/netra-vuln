@@ -1,13 +1,19 @@
 import type { Repositories } from '@/application/ports'
-import type { ScanConfig } from '@/domain/models'
+import type { ComponentFilter, ScanConfig } from '@/domain/models'
 import {
-  type ClientDTO, type CVEAgeDTO, type DistributionDTO, type FindingDTO, type HostDTO, type OverviewDTO,
+  type ClientDTO, type ComponentDTO, type CVEAgeDTO, type DistributionDTO, type FindingDTO, type HostDTO, type OverviewDTO,
   type PageDTO, type SessionDTO, type TrendDTO,
-  toClient, toCVEAge, toFinding, toHost, toOverview, toSession, toTrend,
+  toClient, toComponent, toCVEAge, toFinding, toHost, toOverview, toSession, toTrend,
 } from './dto'
 import type { HttpClient } from './http'
 
 // Port implementations backed by central's admin API.
+
+// Query parameters shared by /findings and /components.
+const filterParams = (f: ComponentFilter) => ({
+  client: f.client, host_id: f.hostId, severity: f.severity, status: f.status, q: f.query,
+  component_kind: f.componentKind, component: f.component, include_resolved: f.includeResolved || undefined,
+})
 
 export function createHttpRepositories(http: HttpClient): Repositories {
   return {
@@ -28,11 +34,11 @@ export function createHttpRepositories(http: HttpClient): Repositories {
     findings: {
       list: async (f) => {
         const p = await http.get<PageDTO<FindingDTO>>('/findings', {
-          client: f.client, host_id: f.hostId, severity: f.severity, status: f.status, q: f.query,
-          include_resolved: f.includeResolved || undefined, sort: f.sort, page: f.page, page_size: f.pageSize,
+          ...filterParams(f), sort: f.sort, page: f.page, page_size: f.pageSize,
         })
         return { items: p.items.map(toFinding), total: p.total, page: p.page, pageSize: p.page_size }
       },
+      components: async (f) => (await http.get<ComponentDTO[]>('/components', filterParams(f))).map(toComponent),
       triage: (id, status, note) => http.request<void>('PATCH', `/findings/${id}`, { status, note }),
     },
     hosts: {

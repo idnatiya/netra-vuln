@@ -164,3 +164,49 @@ func TestAdminSessionsInDB(t *testing.T) {
 		t.Fatalf("disabled login: %v", err)
 	}
 }
+
+func TestComponents(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t)
+	d := e.dashboard()
+	h, _ := e.enrollHost(t, "client_a", "web-1")
+
+	kernel := func(cve, pkg string) domain.Finding {
+		f := sev(cve, "HIGH", pkg)
+		f.Type, f.Target, f.InstalledVersion, f.FixedVersion = "ubuntu", "web-1 (ubuntu 24.04)", "6.8.0-124.124", "6.8.0-147.147"
+		return f
+	}
+	app := func(cve, pkg, path string) domain.Finding {
+		f := sev(cve, "CRITICAL", pkg)
+		f.Type, f.Target, f.PkgPath = "composer-vendor", "PHP", path
+		return f
+	}
+	e.ingestFindings(t, h,
+		kernel("CVE-1", "linux-libc-dev"), kernel("CVE-1", "linux-tools-common"), kernel("CVE-2", "linux-libc-dev"),
+		app("CVE-9", "laravel/framework", "var/www/shop/vendor/composer/installed.json"),
+		// Same package and version in a second app stays a separate finding.
+		app("CVE-9", "laravel/framework", "var/www/blog/vendor/composer/installed.json"),
+	)
+
+	rows, err := d.Components(ctx, domain.FindingFilter{Client: "client_a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("rows = %+v", rows)
+	}
+	// Ordered by critical count first: the two apps, then the kernel group.
+	k := rows[2]
+	if k.Kind != domain.ComponentOS || k.Findings != 3 || k.CVEs != 2 || k.PkgCount != 2 ||
+		len(k.Packages) != 2 || k.Packages[0] != "linux-libc-dev" {
+		t.Fatalf("kernel = %+v", k)
+	}
+	if rows[0].Kind != domain.ComponentApp || rows[0].Critical != 1 || rows[1].Key == rows[0].Key {
+		t.Fatalf("apps = %+v", rows[:2])
+	}
+
+	page, err := d.Findings(ctx, domain.FindingFilter{ComponentKind: domain.ComponentApp, Component: "/var/www/shop"})
+	if err != nil || page.Total != 1 || page.Items[0].PkgPath != "var/www/shop/vendor/composer/installed.json" {
+		t.Fatalf("drill-down: %+v %v", page, err)
+	}
+}

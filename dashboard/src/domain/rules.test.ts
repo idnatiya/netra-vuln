@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Host } from './models'
-import { daysSince, hostHealth, hostIssues, isValidClientName, pageCount, triageNeedsNote } from './rules'
+import { componentLabel, daysSince, hostHealth, hostIssues, isValidClientName, pageCount, triageNeedsNote } from './rules'
 
 const base: Host = {
   id: 1, client: 'a', hostname: 'vm', osFamily: 'debian', osName: 'Ubuntu', osVersion: '24.04', arch: 'amd64',
@@ -43,5 +43,15 @@ describe('helpers', () => {
     expect(triageNeedsNote('accepted')).toBe(true)
     expect(isValidClientName('client_a')).toBe(true)
     expect(isValidClientName('Client A')).toBe(false)
+  })
+})
+
+describe('componentLabel', () => {
+  it('names kernel groups, other OS groups by package, apps and binaries by path', () => {
+    const kernel = { kind: 'os' as const, key: '6.8.0-124.124', packages: ['linux-libc-dev', 'linux-tools-common'], pkgCount: 2 }
+    expect(componentLabel(kernel)).toEqual({ title: 'Linux kernel', detail: kernel.key, hint: 'reboot after upgrade' })
+    expect(componentLabel({ kind: 'os', key: 'k', packages: ['libssl3', 'openssl', 'x'], pkgCount: 5 }).title).toBe('libssl3, openssl +3')
+    expect(componentLabel({ kind: 'app', key: '/var/www/shop', packages: [], pkgCount: 0 })).toEqual({ title: 'shop', detail: '/var/www/shop' })
+    expect(componentLabel({ kind: 'binary', key: '/usr/bin/dockerd', packages: [], pkgCount: 0 }).title).toBe('dockerd')
   })
 })

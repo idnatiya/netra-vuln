@@ -7,6 +7,7 @@ type Finding struct {
 	Type             string
 	VulnerabilityID  string
 	PkgName          string
+	PkgPath          string // file the package was found in (language packages); empty for OS packages
 	InstalledVersion string
 	FixedVersion     string
 	Severity         string

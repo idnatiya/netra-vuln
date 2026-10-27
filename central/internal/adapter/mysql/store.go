@@ -263,20 +263,23 @@ func (s *Store) UpsertFindings(ctx context.Context, hostID int64, findings []dom
 	for start := 0; start < len(findings); start += upsertBatch {
 		batch := findings[start:min(start+upsertBatch, len(findings))]
 		var sb strings.Builder
-		sb.WriteString(`INSERT INTO findings (host_id, finding_key, target, type, cve, pkg,
-			installed_version, fixed_version, severity, title, first_seen, last_seen) VALUES `)
-		args := make([]any, 0, len(batch)*12)
+		sb.WriteString(`INSERT INTO findings (host_id, finding_key, target, type, cve, pkg, pkg_path,
+			component_kind, component, installed_version, fixed_version, severity, title, first_seen, last_seen) VALUES `)
+		args := make([]any, 0, len(batch)*15)
 		for i, f := range batch {
 			if i > 0 {
 				sb.WriteByte(',')
 			}
-			sb.WriteString("(?,?,?,?,?,?,?,?,?,?,?,?)")
-			args = append(args, hostID, f.Key(), f.Target, f.Type, f.CVE, f.Pkg,
-				f.InstalledVersion, f.FixedVersion, f.Severity, f.Title, seen, seen)
+			sb.WriteString("(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+			kind, component := f.Component()
+			args = append(args, hostID, f.Key(), f.Target, f.Type, f.CVE, f.Pkg, f.PkgPath,
+				string(kind), component, f.InstalledVersion, f.FixedVersion, f.Severity, f.Title, seen, seen)
 		}
 		// first_seen, status and note are kept on conflict; a resolved finding reopens.
+		// The component is refreshed so grouping rule changes apply on the next scan.
 		sb.WriteString(` AS new ON DUPLICATE KEY UPDATE last_seen = new.last_seen, resolved_at = NULL,
-			type = new.type, fixed_version = new.fixed_version, severity = new.severity, title = new.title`)
+			type = new.type, fixed_version = new.fixed_version, severity = new.severity, title = new.title,
+			pkg_path = new.pkg_path, component_kind = new.component_kind, component = new.component`)
 		if _, err := s.q.ExecContext(ctx, sb.String(), args...); err != nil {
 			return fmt.Errorf("upsert findings: %w", err)
 		}

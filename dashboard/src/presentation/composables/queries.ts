@@ -1,6 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { computed, type Ref } from 'vue'
-import type { FindingFilter, TriageStatus } from '@/domain/models'
+import type { ComponentFilter, FindingFilter, TriageStatus } from '@/domain/models'
 import { useUseCases } from './useUseCases'
 
 // vue-query wrappers around the use cases. Keys start with the resource name so
@@ -36,6 +36,15 @@ export function useClients() {
   return useQuery({ queryKey: ['clients'], queryFn: () => uc.listClients() })
 }
 
+export function useComponents(filter: Ref<ComponentFilter>) {
+  const uc = useUseCases()
+  return useQuery({
+    queryKey: computed(() => ['components', filter.value]),
+    queryFn: () => uc.listComponents(filter.value),
+    placeholderData: keepPreviousData,
+  })
+}
+
 export function useFindings(filter: Ref<FindingFilter>) {
   const uc = useUseCases()
   return useQuery({
@@ -55,7 +64,7 @@ export function useTriage() {
   const invalidate = useInvalidate()
   return useMutation({
     mutationFn: (v: { id: number, status: TriageStatus, note: string }) => uc.triageFinding(v.id, v.status, v.note),
-    onSuccess: () => invalidate('findings', 'overview', 'hosts', 'oldest'),
+    onSuccess: () => invalidate('findings', 'components', 'overview', 'hosts', 'oldest'),
   })
 }
 
@@ -64,7 +73,7 @@ export function useRevokeHost() {
   const invalidate = useInvalidate()
   return useMutation({
     mutationFn: (id: number) => uc.revokeHost(id),
-    onSuccess: () => invalidate('hosts', 'overview', 'findings', 'trend', 'oldest', 'distribution', 'clients'),
+    onSuccess: () => invalidate('hosts', 'overview', 'findings', 'components', 'trend', 'oldest', 'distribution', 'clients'),
   })
 }
 

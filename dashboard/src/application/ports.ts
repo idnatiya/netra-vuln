@@ -1,5 +1,5 @@
 import type {
-  Client, CVEAge, Distribution, Finding, FindingFilter, Host, Overview, Page, ScanConfig, Session,
+  Client, Component, ComponentFilter, CVEAge, Distribution, Finding, FindingFilter, Host, Overview, Page, ScanConfig, Session,
   TrendPoint, TriageStatus,
 } from '@/domain/models'
 
@@ -20,6 +20,7 @@ export interface StatsRepository {
 
 export interface FindingsRepository {
   list(filter: FindingFilter): Promise<Page<Finding>>
+  components(filter: ComponentFilter): Promise<Component[]>
   triage(id: number, status: TriageStatus, note: string): Promise<void>
 }
 
