@@ -39,6 +39,31 @@ type Store interface {
 	// ResolveMissing marks open findings of the host not seen at `seen` as resolved.
 	ResolveMissing(ctx context.Context, hostID int64, seen time.Time) error
 	UpdateHostScan(ctx context.Context, hostID int64, r domain.Report, now time.Time) error
+
+	HostByID(ctx context.Context, id int64) (domain.Host, error)
+	// UpdateFindingTriage returns domain.ErrNotFound when no finding has that id.
+	UpdateFindingTriage(ctx context.Context, id int64, status domain.TriageStatus, note string) error
+
+	CreateAdminUser(ctx context.Context, username, passwordHash string, now time.Time) error
+	AdminUserByUsername(ctx context.Context, username string) (domain.AdminUser, error)
+	ListAdminUsers(ctx context.Context) ([]domain.AdminUser, error)
+	SetAdminPassword(ctx context.Context, username, passwordHash string) error
+	InsertSession(ctx context.Context, userID int64, tokenHash []byte, now, expires time.Time) error
+	// SessionByTokenHash returns only unexpired sessions of active admins.
+	SessionByTokenHash(ctx context.Context, tokenHash []byte, now time.Time) (domain.Session, error)
+	DeleteSession(ctx context.Context, tokenHash []byte) error
+	DeleteExpiredSessions(ctx context.Context, now time.Time) error
+}
+
+// DashboardQueries is the read side for the admin dashboard. Revoked hosts are
+// excluded everywhere except HostRows.
+type DashboardQueries interface {
+	// HostRows lists hosts (revoked included) with open-finding counts; clientName "" = all.
+	HostRows(ctx context.Context, clientName string) ([]domain.HostRow, error)
+	Findings(ctx context.Context, f domain.FindingFilter) (domain.Page[domain.FindingRow], error)
+	Trend(ctx context.Context, clientName string, hostID int64, since time.Time) ([]domain.TrendPoint, error)
+	OldestCVEs(ctx context.Context, clientName string, limit int) ([]domain.CVEAge, error)
+	Distribution(ctx context.Context) (domain.Distribution, error)
 }
 
 // now returns UTC truncated to microseconds, matching DATETIME(6), so values

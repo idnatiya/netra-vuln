@@ -51,10 +51,18 @@ type Limits struct {
 	// switch to per-IP via a trusted X-Forwarded-For if abuse ever shows up.
 	EnrollMax int
 	AuthMax   int
+	LoginMax  int // dashboard logins per client IP
 }
 
 func DefaultLimits() Limits {
-	return Limits{Window: time.Minute, PerHostMax: 60, EnrollMax: 30, AuthMax: 300}
+	return Limits{Window: time.Minute, PerHostMax: 60, EnrollMax: 30, AuthMax: 300, LoginMax: 10}
+}
+
+type Options struct {
+	Limits Limits
+	// TrustProxy makes c.IP() use X-Forwarded-For from private-network proxies
+	// (Caddy in the compose network). Leave false when clients connect directly.
+	TrustProxy bool
 }
 
 type Server struct {
@@ -62,18 +70,26 @@ type Server struct {
 	enroll Enroller
 	log    *slog.Logger
 	app    *fiber.App
+	limits Limits
 }
 
-func New(agent Agent, enroll Enroller, log *slog.Logger, limits Limits) *Server {
-	s := &Server{agent: agent, enroll: enroll, log: log}
-	s.app = fiber.New(fiber.Config{
+func New(agent Agent, enroll Enroller, log *slog.Logger, opts Options) *Server {
+	s := &Server{agent: agent, enroll: enroll, log: log, limits: opts.Limits}
+	limits := opts.Limits
+	cfg := fiber.Config{
 		AppName:      "central",
 		BodyLimit:    maxReportBytes,
 		ReadTimeout:  2 * time.Minute,
 		WriteTimeout: 2 * time.Minute,
 		IdleTimeout:  2 * time.Minute,
 		ErrorHandler: s.errorHandler,
-	})
+	}
+	if opts.TrustProxy {
+		cfg.TrustProxy = true
+		cfg.ProxyHeader = fiber.HeaderXForwardedFor
+		cfg.TrustProxyConfig = fiber.TrustProxyConfig{Private: true, Loopback: true}
+	}
+	s.app = fiber.New(cfg)
 
 	s.app.Get("/healthz", s.healthz)
 	s.app.Post("/api/v1/enroll", rateLimit(limits.EnrollMax, limits.Window, constKey("enroll")), s.handleEnroll)
@@ -236,6 +252,8 @@ func (s *Server) errorHandler(c fiber.Ctx, err error) error {
 		code = fiber.StatusForbidden
 	case errors.Is(err, domain.ErrConflict):
 		code = fiber.StatusConflict
+	case errors.Is(err, domain.ErrNotFound):
+		code = fiber.StatusNotFound
 	}
 	msg := err.Error()
 	if code >= 500 {

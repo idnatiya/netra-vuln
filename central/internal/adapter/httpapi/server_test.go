@@ -63,7 +63,7 @@ type testServer struct {
 func newTestServer(t *testing.T, limits Limits) (*testServer, *fakeAgent) {
 	t.Helper()
 	a := &fakeAgent{host: domain.Host{ID: 1, ClientName: "client_a", Hostname: "vm1"}}
-	srv := New(a, fakeEnroller{}, slog.New(slog.NewTextHandler(io.Discard, nil)), limits)
+	srv := New(a, fakeEnroller{}, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{Limits: limits})
 	return &testServer{URL: "http://central.test", app: srv.App()}, a
 }
 
@@ -238,7 +238,7 @@ func TestHeartbeat(t *testing.T) {
 }
 
 func TestRateLimits(t *testing.T) {
-	limits := Limits{Window: time.Hour, PerHostMax: 2, EnrollMax: 1, AuthMax: 1000}
+	limits := Limits{Window: time.Hour, PerHostMax: 2, EnrollMax: 1, AuthMax: 1000, LoginMax: 10}
 	srv, _ := newTestServer(t, limits)
 	codes := []int{}
 	for range 3 {

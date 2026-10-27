@@ -1,0 +1,4 @@
+# vue-demi postinstall only switches between Vue 2/3; not needed for Vue 3.
+allowBuilds:
+  vue-demi: false
+savePrefix: ''

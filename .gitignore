@@ -22,3 +22,14 @@ coverage.*
 .idea/
 .vscode/
 *.swp
+
+# Playwright MCP screenshots/snapshots
+/.playwright-mcp/
+
+# Dashboard
+/dashboard/node_modules/
+/dashboard/dist/
+
+# Central compose runtime data
+/deploy/central/backups/
+/deploy/central/.env

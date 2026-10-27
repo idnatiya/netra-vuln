@@ -7,6 +7,9 @@
 package wire
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
 	"time"
 
 	"netra-vuln/internal/scanconfig"
@@ -94,4 +97,19 @@ func (s ScanConfig) Resolve() (scanconfig.Config, error) {
 		cfg.Timeout = t
 	}
 	return cfg, cfg.Validate()
+}
+
+// ParseScanConfig strictly decodes stored or admin-supplied overrides, validates
+// the resulting config, and returns canonical JSON with only the allowed fields.
+func ParseScanConfig(b []byte) ([]byte, error) {
+	var cfg ScanConfig
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&cfg); err != nil {
+		return nil, fmt.Errorf("scan config: %w (allowed: severity, ignore_unfixed, skip_dirs, timeout)", err)
+	}
+	if _, err := cfg.Resolve(); err != nil {
+		return nil, fmt.Errorf("scan config: %w", err)
+	}
+	return json.Marshal(cfg)
 }

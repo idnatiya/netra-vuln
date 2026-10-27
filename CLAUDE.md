@@ -8,7 +8,7 @@ I manage 26 Linux VMs belonging to several different clients, spread across vari
 
 Build the system using an **agent + central** model:
 - **Agent**: a small non-AI program (daemon) installed on each VM. Its only job is to run Trivy, slim down the results, and send them to central.
-- **Central**: receiving API + MySQL + Grafana for dashboards.
+- **Central**: receiving API + MySQL + an admin web dashboard.
 
 Work in phases (see "Phases"). At the end of each phase, stop and show the results before continuing. If a design decision is ambiguous, ask first.
 
@@ -25,9 +25,9 @@ Work in phases (see "Phases"). At the end of each phase, stop and show the resul
 - Agent: static binary (`CGO_ENABLED=0`), targets `linux/amd64` and `linux/arm64`
 - Scanner: **Trivy binary** invoked via `os/exec` (DO NOT import Trivy as a library). Trivy version is pinned in the build config.
 - Database: **MySQL 8**
-- Dashboard: **Grafana** with a provisioned MySQL datasource
+- Dashboard: **Vue 3 + Vite + TypeScript + Tailwind v4 + shadcn-vue** SPA in `/dashboard` (admin only), served by Caddy, talking to central's `/api/admin/v1`
 - Agent packaging: **nfpm** or **GoReleaser** producing `.deb` and `.rpm`, plus a `.tar.gz` tarball + `install.sh`
-- Central deployment: **Docker Compose** (central API + MySQL + Grafana + TLS reverse proxy, e.g. Caddy)
+- Central deployment: **Docker Compose** (central API + MySQL + Caddy for TLS and the dashboard SPA + daily backup)
 - Agent deployment: **Ansible role** (`deploy/ansible/roles/vuln_agent`)
 - CI: **GitLab CI** (`.gitlab-ci.yml`)
 
@@ -36,11 +36,11 @@ Work in phases (see "Phases"). At the end of each phase, stop and show the resul
 /agent        # agent Go code
 /central      # central API Go code
 /deploy
-  /central    # docker-compose.yml, Caddyfile, .env.example
-  /grafana    # datasource provisioning + dashboard JSON
+  /central    # docker-compose.yml, Dockerfiles, Caddyfile, backup.sh, .env.example
   /ansible    # role "vuln_agent", dev inventory, example per-client inventory
   /dev        # fakecentral: dev stand-in for central (logs + saves agent payloads)
 /packaging    # nfpm config, systemd units, postinstall/preremove scripts, config.example.yaml
+/dashboard    # admin SPA (Vue + shadcn-vue, clean architecture)
 /migrations   # SQL migrations
 /docs         # README, architecture, install guide
 .gitlab-ci.yml
@@ -170,18 +170,23 @@ Code layout mirrors the agent: `central/cmd/central` + `central/internal/{domain
 4. If the scan status is `error`, DO NOT perform steps 2–3 (do not mark findings resolved just because a scan failed).
 5. Update `hosts.last_scan_at` and `last_scan_status`.
 
-## Grafana (provisioned)
-MySQL datasource with a **read-only** user. Dashboard with `client` and `host` variables:
-1. Count of open CRITICAL/HIGH per client and per host
-2. List of open findings (table), filterable by severity/pkg/cve
-3. Hosts with no successful scan > 48 hours, or no heartbeat > 1 hour
-4. Hosts with `reboot_required = true` or auto-update disabled
-5. Finding count trend over time (from the `scans` table)
-6. Oldest open CVEs (by `first_seen`)
-7. Summary of OS distribution, agent versions, and Trivy versions
+## Dashboard (admin web UI)
+Admin-only SPA; admins see every client (no per-client logins). Views:
+1. Overview: open CRITICAL/HIGH per client and host, stale hosts (no successful scan > 48h or no heartbeat > 1h), reboot required / auto-update off, 30-day trend (last successful scan per host per day, from `scans`), oldest open CVEs (by `first_seen`), OS / agent / Trivy distribution
+2. Findings: filter by client, host, severity, triage status, CVE/package search; paging; triage
+3. Hosts: health, issues, revoke
+4. Clients: create (enroll token shown once), per-client scan-config overrides
+
+Rules:
+- "Open" = `resolved_at IS NULL AND status = 'open'`. Triage (`accepted` / `false_positive`) needs a note and survives re-scans; it never deletes data.
+- Auth: `admin_users` (bcrypt) + `admin_sessions` (SHA-256 token hash, 12h). Cookie `vuln_session`: HttpOnly, Secure, SameSite=Strict, Path=/api/admin. State-changing requests must send a same-origin `Origin` (CSRF). Login limited per client IP; behind Caddy set `CENTRAL_TRUST_PROXY=true`.
+- Admins are created with the CLI only: `central admin create|passwd|list` (no sign-up).
+- Admin API JSON shapes live in `central/internal/adapter/httpapi/admin_dto.go` (not part of the agent contract in `internal/wire`).
+- Dashboard structure: `src/domain` (types + pure rules) <- `src/application` (ports + use cases) <- `src/infrastructure` (fetch + DTO mapping) / `src/presentation` (views, vue-query composables, shadcn `components/ui`); `src/di.ts` is the composition root. Views never call `fetch`.
+- Production CSP is `default-src 'self'`: no remote fonts/scripts/styles (a vitest guard checks `style.css`).
 
 ## Deployment
-- `deploy/central/docker-compose.yml`: central API, MySQL (persistent volume), Grafana, Caddy (automatic HTTPS). Include `.env.example`, healthchecks, and an example daily MySQL backup.
+- `deploy/central/docker-compose.yml`: `mysql` (named volume), `migrate` (one-shot `central migrate`), `central` (distroless, healthcheck `central healthcheck`), `caddy` (automatic HTTPS, serves the dashboard SPA, proxies `/api/*`; optional `ADMIN_ALLOW_CIDRS` for the dashboard), `backup` (daily `mysqldump` into `./backups`, `BACKUP_KEEP_DAYS`). Configure via `.env` (from `.env.example`); first admin: `docker compose exec central central admin create <name>`. `.dockerignore` keeps `dev-out/` and other local data out of the build context.
 - `deploy/ansible/roles/vuln_agent`:
   - Detect `ansible_architecture` (x86_64/aarch64) and later `ansible_os_family` for `.deb`/`.rpm`
   - `vuln_agent_install_method: binary` (now: copy `dist/vuln-agent-linux-<arch>` + pinned Trivy release with checksum) → `package` once Phase 4 ships packages; tarball fallback for unknown distros
@@ -189,7 +194,8 @@ MySQL datasource with a **read-only** user. Dashboard with `client` and `host` v
   - Enroll only when no token (or `vuln_agent_force_enroll`), enroll token from Ansible Vault, `no_log`
   - Run `vuln-agent check`; enable timers once packaging provides the systemd units
   - Example inventory grouped per client with different SSH user/port/key per group and `ProxyJump`
-- Dev loop (laptop + sample VM over Tailscale): `make central-dev` (MySQL on 127.0.0.1:3317 via `deploy/dev/mysql.compose.yml`, central on the laptop's tailnet IP) or `make fakecentral`, then `make deploy-dev` / `make scan-dev`; admin CLI via `make central ARGS="..."`.
+- Local dev: `make dev` runs MySQL (127.0.0.1:3317, tmpfs, `deploy/dev/mysql.compose.yml`) + central (127.0.0.1:18080) + the dashboard (http://localhost:5173) in one terminal; Ctrl+C stops all, and if either process dies the other is stopped too. It migrates and seeds admin `admin` once (password in `dev-out/admin-password`). `make help` lists targets; `make dev-down` drops the dev DB; admin CLI via `make central ARGS="..."`.
+- Sample VM loop over Tailscale: `make dev CENTRAL_ADDR=<laptop-tailnet-ip>:8080` (or `make fakecentral`), then `make deploy-dev` / `make scan-dev`.
 - Tests: `make test` (unit, MySQL tests skip), `make test-integration` (starts MySQL, sets `TEST_MYSQL_DSN`).
 - Manual install without Ansible: `.deb`/`.rpm` package or tarball + `install.sh`, fill in `config.yaml`, `vuln-agent enroll`, `vuln-agent check`.
 
@@ -214,13 +220,12 @@ MySQL datasource with a **read-only** user. Dashboard with `client` and `host` v
 ## Phases
 1. **Phase 1**: agent (scan, slim, send, spool, heartbeat, enroll, check) + tests
 2. **Phase 2**: DB schema + migrations, central API (enroll, heartbeat, config, report) + tests, following the contract in `internal/wire`
-3. **Phase 3**: central Docker Compose + Grafana provisioning + dashboard
+3. **Phase 3**: central Docker Compose + admin dashboard (Vue) + admin API
 4. **Phase 4**: packaging (deb/rpm/tarball) + systemd + GitLab CI
 5. **Phase 5**: finalize the Ansible role (package install + timers) + documentation
 
 ## Out of Scope (do not build)
 - Remote command execution in the agent
 - Agent auto-update from central
-- Custom web UI (Grafana is enough)
 - Secret, misconfig, or license scanning (vuln only for now)
 - AI/LLM integration

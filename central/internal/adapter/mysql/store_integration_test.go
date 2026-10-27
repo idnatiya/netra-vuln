@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -23,6 +24,7 @@ import (
 	"netra-vuln/central/internal/domain"
 	"netra-vuln/central/internal/usecase"
 	"netra-vuln/internal/wire"
+	"netra-vuln/migrations"
 )
 
 // env wires real usecases to a fresh database with a controllable clock.
@@ -126,8 +128,9 @@ func (e *env) count(t *testing.T, q string, args ...any) int {
 func TestMigrateIdempotent(t *testing.T) {
 	e := newEnv(t)
 	mysqltest.MigrateAgain(t, e.db)
-	if n := e.count(t, `SELECT COUNT(*) FROM schema_migrations`); n != 1 {
-		t.Fatalf("schema_migrations rows = %d", n)
+	files, _ := fs.Glob(migrations.FS, "*.sql")
+	if n := e.count(t, `SELECT COUNT(*) FROM schema_migrations`); n != len(files) || n == 0 {
+		t.Fatalf("schema_migrations rows = %d, want %d", n, len(files))
 	}
 }
 
@@ -268,7 +271,7 @@ func TestTenantIsolation(t *testing.T) {
 	hostA, tokA := e.enrollHost(t, "client_a", "vm-a")
 	hostB, _ := e.enrollHost(t, "client_b", "vm-b")
 	app := httpapi.New(e.agent, e.enroll,
-		slog.New(slog.NewTextHandler(io.Discard, nil)), httpapi.DefaultLimits()).App()
+		slog.New(slog.NewTextHandler(io.Discard, nil)), httpapi.Options{Limits: httpapi.DefaultLimits()}).App()
 
 	send := func(clientID, hostname string) int {
 		var buf bytes.Buffer

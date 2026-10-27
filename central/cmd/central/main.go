@@ -2,21 +2,24 @@
 package main
 
 import (
-	"bytes"
+	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"text/tabwriter"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"golang.org/x/term"
 
 	"netra-vuln/central/internal/adapter/httpapi"
 	"netra-vuln/central/internal/adapter/mysql"
@@ -30,8 +33,9 @@ var version = "dev" // -ldflags "-X main.version=..."
 const usage = `usage: central <command>
 
 environment:
-  CENTRAL_DSN    MySQL DSN, e.g. user:pass@tcp(mysql:3306)/vuln   (required)
-  CENTRAL_ADDR   listen address for serve (default :8080)
+  CENTRAL_DSN          MySQL DSN, e.g. user:pass@tcp(mysql:3306)/vuln   (required)
+  CENTRAL_ADDR         listen address for serve (default :8080)
+  CENTRAL_TRUST_PROXY  "true" behind Caddy: client IP from X-Forwarded-For (private-network proxies)
 
 commands:
   serve                                    run the API server
@@ -42,6 +46,10 @@ commands:
   client list
   host list [-client <name>]
   host revoke <hostname> [-client <name>]
+  admin create <username>                  create a dashboard admin (password from stdin)
+  admin passwd <username>                  set a new password (from stdin)
+  admin list
+  healthcheck                              exit 0 if the local server answers /healthz
   version
 `
 
@@ -63,9 +71,12 @@ func run(args []string, log *slog.Logger) error {
 	if len(args) == 0 {
 		return errUsage
 	}
-	if args[0] == "version" {
+	switch args[0] {
+	case "version":
 		fmt.Println(version)
 		return nil
+	case "healthcheck": // no DSN needed; used by the Docker healthcheck
+		return healthcheck()
 	}
 	dsn := os.Getenv("CENTRAL_DSN")
 	if dsn == "" {
@@ -98,19 +109,25 @@ func run(args []string, log *slog.Logger) error {
 		return clientCmd(ctx, admin, args[1], args[2:])
 	case cmd == "host" && len(args) > 1:
 		return hostCmd(ctx, admin, args[1], args[2:])
+	case cmd == "admin" && len(args) > 1:
+		return adminCmd(ctx, &usecase.AdminAuth{Store: store, Now: time.Now}, args[1], args[2:])
 	}
 	return errUsage
 }
 
-func serve(ctx context.Context, store usecase.Store, log *slog.Logger) error {
+func serve(ctx context.Context, store *mysql.Store, log *slog.Logger) error {
 	addr := os.Getenv("CENTRAL_ADDR")
 	if addr == "" {
 		addr = ":8080"
 	}
-	app := httpapi.New(
+	srv := httpapi.New(
 		&usecase.Agent{Store: store, Now: time.Now},
 		&usecase.Enroll{Store: store, Now: time.Now},
-		log, httpapi.DefaultLimits()).App()
+		log, httpapi.Options{Limits: httpapi.DefaultLimits(), TrustProxy: os.Getenv("CENTRAL_TRUST_PROXY") == "true"})
+	srv.MountAdmin(
+		&usecase.AdminAuth{Store: store, Now: time.Now},
+		&usecase.Dashboard{Queries: store, Store: store, Admin: &usecase.Admin{Store: store, Now: time.Now}, Now: time.Now})
+	app := srv.App()
 
 	errc := make(chan error, 1)
 	go func() { errc <- app.Listen(addr, fiber.ListenConfig{DisableStartupMessage: true}) }()
@@ -168,8 +185,7 @@ func clientCmd(ctx context.Context, admin *usecase.Admin, sub string, args []str
 	return errUsage
 }
 
-// readScanConfig reads, strictly decodes, and validates overrides, returning
-// canonical JSON so only allowed fields are ever stored.
+// readScanConfig reads overrides from a file or stdin ("-") and validates them.
 func readScanConfig(path string) ([]byte, error) {
 	var b []byte
 	var err error
@@ -181,16 +197,7 @@ func readScanConfig(path string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	var cfg wire.ScanConfig
-	dec := json.NewDecoder(bytes.NewReader(b))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&cfg); err != nil {
-		return nil, fmt.Errorf("scan config: %w (allowed: severity, ignore_unfixed, skip_dirs, timeout)", err)
-	}
-	if _, err := cfg.Resolve(); err != nil {
-		return nil, fmt.Errorf("scan config: %w", err)
-	}
-	return json.Marshal(cfg)
+	return wire.ParseScanConfig(b)
 }
 
 func hostCmd(ctx context.Context, admin *usecase.Admin, sub string, args []string) error {
@@ -253,4 +260,83 @@ func dash(s string) string {
 		return "-"
 	}
 	return s
+}
+
+func adminCmd(ctx context.Context, auth *usecase.AdminAuth, sub string, args []string) error {
+	switch {
+	case sub == "create" && len(args) == 1:
+		pw, err := readPassword()
+		if err != nil {
+			return err
+		}
+		if err := auth.CreateAdmin(ctx, args[0], pw); err != nil {
+			return err
+		}
+		fmt.Printf("admin %q created\n", args[0])
+		return nil
+	case sub == "passwd" && len(args) == 1:
+		pw, err := readPassword()
+		if err != nil {
+			return err
+		}
+		if err := auth.SetPassword(ctx, args[0], pw); err != nil {
+			return err
+		}
+		fmt.Printf("password for %q updated\n", args[0])
+		return nil
+	case sub == "list" && len(args) == 0:
+		users, err := auth.ListAdmins(ctx)
+		if err != nil {
+			return err
+		}
+		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+		fmt.Fprintln(tw, "USERNAME\tCREATED\tDISABLED")
+		for _, u := range users {
+			fmt.Fprintf(tw, "%s\t%s\t%s\n", u.Username, u.CreatedAt.Format(time.RFC3339), ts(u.DisabledAt))
+		}
+		return tw.Flush()
+	}
+	return errUsage
+}
+
+// readPassword prompts without echo on a terminal, or reads one line from a
+// pipe (e.g. `docker compose exec -T central central admin create x < pw.txt`).
+func readPassword() (string, error) {
+	fd := int(os.Stdin.Fd())
+	if term.IsTerminal(fd) {
+		fmt.Fprint(os.Stderr, "password (12-72 chars): ")
+		b, err := term.ReadPassword(fd)
+		fmt.Fprintln(os.Stderr)
+		return string(b), err
+	}
+	line, err := bufio.NewReader(io.LimitReader(os.Stdin, 1024)).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", err
+	}
+	return strings.TrimRight(line, "\r\n"), nil
+}
+
+// healthcheck asks the local server for /healthz (the image has no curl).
+func healthcheck() error {
+	addr := os.Getenv("CENTRAL_ADDR")
+	if addr == "" {
+		addr = ":8080"
+	}
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return err
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get("http://" + net.JoinHostPort(host, port) + "/healthz")
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("healthz: HTTP %d", resp.StatusCode)
+	}
+	return nil
 }

@@ -40,6 +40,7 @@ func Open(dsn string, multiStatements bool) (*sql.DB, error) {
 	cfg.ParseTime = true
 	cfg.Loc = time.UTC
 	cfg.MultiStatements = multiStatements
+	cfg.ClientFoundRows = true // UPDATE reports matched rows, so "no change" != "not found"
 	if cfg.Params == nil {
 		cfg.Params = map[string]string{}
 	}
@@ -154,16 +155,18 @@ const hostColumns = `h.id, h.client_id, c.name, h.hostname, h.os_family, h.os_na
 	h.auto_update_enabled, h.last_heartbeat_at, h.last_scan_at, h.last_scan_status,
 	h.created_at, h.revoked_at`
 
-func scanHost(row interface{ Scan(...any) error }) (domain.Host, error) {
+// scanHost scans hostColumns, followed by any extra destinations.
+func scanHost(row interface{ Scan(...any) error }, extra ...any) (domain.Host, error) {
 	var (
 		h                        domain.Host
 		heartbeat, scan, revoked sql.NullTime
 		status                   sql.NullString
 	)
-	err := row.Scan(&h.ID, &h.ClientID, &h.ClientName, &h.Hostname, &h.Meta.OSFamily, &h.Meta.OSName,
+	dest := append([]any{&h.ID, &h.ClientID, &h.ClientName, &h.Hostname, &h.Meta.OSFamily, &h.Meta.OSName,
 		&h.Meta.OSVersion, &h.Meta.Arch, &h.Meta.KernelRunning, &h.Meta.AgentVersion, &h.TrivyVersion,
 		&h.Meta.RebootRequired, &h.Meta.AutoUpdateEnabled, &heartbeat, &scan, &status,
-		&h.CreatedAt, &revoked)
+		&h.CreatedAt, &revoked}, extra...)
+	err := row.Scan(dest...)
 	h.LastHeartbeatAt, h.LastScanAt, h.RevokedAt = nullTime(heartbeat), nullTime(scan), nullTime(revoked)
 	h.LastScanStatus = domain.ScanStatus(status.String)
 	return h, mapErr(err)

@@ -4,50 +4,112 @@ ANSIBLE_DIR := deploy/ansible
 MYSQL_COMPOSE := docker compose -f deploy/dev/mysql.compose.yml
 TEST_MYSQL_DSN ?= root:test@tcp(127.0.0.1:3317)/
 CENTRAL_DSN ?= root:test@tcp(127.0.0.1:3317)/vuln
-# Tailscale IP of this laptop; the sample VM pushes here.
-CENTRAL_ADDR ?= 100.77.238.106:8080
+# Local only by default, on an uncommon port (8080/8090 are often taken by other projects).
+# For the sample-VM loop over Tailscale:
+#   make dev CENTRAL_ADDR=100.77.238.106:8080
+CENTRAL_ADDR ?= 127.0.0.1:18080
+DEV_ADMIN_USER ?= admin
+DEV_ADMIN_PASSWORD_FILE := dev-out/admin-password
 
-.PHONY: test test-integration mysql-up build-linux fakecentral central central-dev deploy-dev scan-dev
+.DEFAULT_GOAL := help
+.PHONY: help dev dev-admin dev-down test test-integration mysql-up build-linux fakecentral central central-dev \
+	deploy-dev scan-dev dashboard-deps dashboard-dev dashboard-test compose-up compose-down
 
-test:
+help: ## Show this help
+	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_\/-]+:.*## / {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+# --- Local development -------------------------------------------------------
+
+dev: mysql-up dist/central dashboard-deps ## Run MySQL + central + dashboard together (Ctrl+C stops all)
+	@CENTRAL_DSN='$(CENTRAL_DSN)' dist/central migrate
+	@$(MAKE) --no-print-directory dev-admin
+	@echo ""
+	@echo "  dashboard  http://localhost:5173   (user: $(DEV_ADMIN_USER), password: $(DEV_ADMIN_PASSWORD_FILE))"
+	@echo "  central    http://$(CENTRAL_ADDR)   (agents: central_url)"
+	@echo ""
+	@# Stop both when either exits (e.g. central cannot bind its port), so the
+	@# dashboard never keeps proxying to whatever else owns that port.
+	@stopped=; trap 'stopped=1' INT TERM; trap 'kill $$(jobs -p) 2>/dev/null' EXIT; \
+	CENTRAL_DSN='$(CENTRAL_DSN)' CENTRAL_ADDR='$(CENTRAL_ADDR)' dist/central serve & c=$$!; \
+	CENTRAL_DEV_URL='http://$(CENTRAL_ADDR)' pnpm -C dashboard dev & v=$$!; \
+	while [ -z "$$stopped" ] && kill -0 $$c 2>/dev/null && kill -0 $$v 2>/dev/null; do sleep 1; done; \
+	[ -n "$$stopped" ] && { echo "stopped"; exit 0; }; \
+	kill -0 $$c 2>/dev/null || echo "central exited; if the port is taken, run: make dev CENTRAL_ADDR=127.0.0.1:<free-port>" >&2; \
+	exit 1
+
+dev-admin: dist/central ## Create the dev admin once (password kept in dev-out/admin-password)
+	@if CENTRAL_DSN='$(CENTRAL_DSN)' dist/central admin list | awk 'NR > 1 {print $$1}' | grep -qx '$(DEV_ADMIN_USER)'; then \
+		echo "admin '$(DEV_ADMIN_USER)' exists"; \
+	else \
+		mkdir -p $(dir $(DEV_ADMIN_PASSWORD_FILE)); \
+		[ -s $(DEV_ADMIN_PASSWORD_FILE) ] || (umask 077; openssl rand -base64 18 > $(DEV_ADMIN_PASSWORD_FILE)); \
+		CENTRAL_DSN='$(CENTRAL_DSN)' dist/central admin create $(DEV_ADMIN_USER) < $(DEV_ADMIN_PASSWORD_FILE); \
+	fi
+
+dev-down: ## Stop the dev MySQL (its data is on tmpfs and is lost)
+	$(MYSQL_COMPOSE) down
+
+mysql-up: ## Start the dev/test MySQL on 127.0.0.1:3317
+	$(MYSQL_COMPOSE) up -d --wait
+
+# Fixed output path so the macOS firewall approval sticks (go run uses a new temp path each time).
+dist/central: FORCE
+	@go build -o dist/central ./central/cmd/central
+
+central: dist/central ## Admin CLI on the dev DB, e.g. make central ARGS="client create acme"
+	CENTRAL_DSN='$(CENTRAL_DSN)' dist/central $(ARGS)
+
+central-dev: mysql-up dist/central ## Run central only (no dashboard), e.g. for the VM loop
+	CENTRAL_DSN='$(CENTRAL_DSN)' dist/central migrate
+	CENTRAL_DSN='$(CENTRAL_DSN)' CENTRAL_ADDR='$(CENTRAL_ADDR)' dist/central serve
+
+fakecentral: ## Stand-in central that logs payloads, e.g. make fakecentral ARGS=-fail-reports
+	go run ./deploy/dev/fakecentral $(ARGS)
+
+FORCE:
+
+# --- Dashboard ---------------------------------------------------------------
+
+dashboard-deps:
+	@pnpm -C dashboard install --frozen-lockfile --silent
+
+dashboard-dev: dashboard-deps ## Dashboard dev server only (proxies /api to CENTRAL_ADDR)
+	CENTRAL_DEV_URL='http://$(CENTRAL_ADDR)' pnpm -C dashboard dev
+
+dashboard-test: dashboard-deps ## Dashboard unit tests + typecheck
+	pnpm -C dashboard test
+	pnpm -C dashboard typecheck
+
+# --- Tests & builds ----------------------------------------------------------
+
+test: dashboard-test ## Unit tests (MySQL tests skip)
 	go vet ./...
 	go test ./...
 
-mysql-up:
-	$(MYSQL_COMPOSE) up -d --wait
-
-# Runs all tests, including the MySQL ones that `make test` skips.
-test-integration: mysql-up
+test-integration: mysql-up ## All Go tests including MySQL integration tests
 	TEST_MYSQL_DSN='$(TEST_MYSQL_DSN)' go test -count=1 ./...
 
-build-linux:
+build-linux: ## Build vuln-agent for linux amd64 + arm64 into dist/
 	@for arch in amd64 arm64; do \
 		CGO_ENABLED=0 GOOS=linux GOARCH=$$arch go build -trimpath \
 			-ldflags "-s -w -X main.version=$(VERSION)" \
 			-o dist/vuln-agent-linux-$$arch ./agent/cmd/vuln-agent || exit 1; \
 	done
 
-# Extra flags via ARGS, e.g. make fakecentral ARGS=-fail-reports
-fakecentral:
-	go run ./deploy/dev/fakecentral $(ARGS)
+# --- Sample VM (Ansible) -----------------------------------------------------
 
-deploy-dev: build-linux
+deploy-dev: build-linux ## Install/enroll the agent on the dev inventory
 	cd $(ANSIBLE_DIR) && ansible-playbook site.yml $(ARGS)
 
-scan-dev: build-linux
+scan-dev: build-linux ## deploy-dev + run one scan
 	cd $(ANSIBLE_DIR) && ansible-playbook site.yml -e vuln_agent_run_scan=true $(ARGS)
 
-# Fixed output path so the macOS firewall approval sticks (go run uses a new temp path each time).
-dist/central: FORCE
-	go build -o dist/central ./central/cmd/central
+# --- Production stack (deploy/central/.env must exist; see .env.example) -----
 
-# Admin CLI against the dev database, e.g. make central ARGS="client create dev"
-central: dist/central
-	CENTRAL_DSN='$(CENTRAL_DSN)' dist/central $(ARGS)
+COMPOSE := docker compose -f deploy/central/docker-compose.yml --env-file deploy/central/.env
 
-# Real central for the VM dev loop (replaces fakecentral on the same address).
-central-dev: mysql-up dist/central
-	CENTRAL_DSN='$(CENTRAL_DSN)' dist/central migrate
-	CENTRAL_DSN='$(CENTRAL_DSN)' CENTRAL_ADDR='$(CENTRAL_ADDR)' dist/central serve
+compose-up: ## Build and start the production stack
+	$(COMPOSE) up -d --build
 
-FORCE:
+compose-down: ## Stop the production stack (volumes are kept)
+	$(COMPOSE) down

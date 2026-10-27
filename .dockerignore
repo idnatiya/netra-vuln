@@ -1,0 +1,11 @@
+# Keep the build context small and free of local data/secrets.
+.git
+**/node_modules
+dist
+dashboard/dist
+dev-out
+.playwright-mcp
+deploy/central/backups
+deploy/central/.env
+**/*.env
+!**/.env.example
