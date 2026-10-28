@@ -23,7 +23,7 @@ import (
 	"netra-vuln/central/internal/adapter/mysql/mysqltest"
 	"netra-vuln/central/internal/domain"
 	"netra-vuln/central/internal/usecase"
-	"netra-vuln/internal/wire"
+	"github.com/idnatiya/netra-vuln-agent/pkg/wire"
 	"netra-vuln/migrations"
 )
 

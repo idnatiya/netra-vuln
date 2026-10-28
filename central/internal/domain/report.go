@@ -7,7 +7,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"netra-vuln/internal/scanconfig"
+	"github.com/idnatiya/netra-vuln-agent/pkg/scanconfig"
 )
 
 type ScanStatus string

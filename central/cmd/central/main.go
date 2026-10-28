@@ -24,7 +24,7 @@ import (
 	"netra-vuln/central/internal/adapter/httpapi"
 	"netra-vuln/central/internal/adapter/mysql"
 	"netra-vuln/central/internal/usecase"
-	"netra-vuln/internal/wire"
+	"github.com/idnatiya/netra-vuln-agent/pkg/wire"
 	"netra-vuln/migrations"
 )
 

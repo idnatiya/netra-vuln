@@ -5,7 +5,7 @@ import (
 	"slices"
 	"time"
 
-	"netra-vuln/internal/scanconfig"
+	"github.com/idnatiya/netra-vuln-agent/pkg/scanconfig"
 )
 
 // TriageStatus is the admin's verdict on a finding. Only "open" findings count

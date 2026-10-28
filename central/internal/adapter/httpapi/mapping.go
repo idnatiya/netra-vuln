@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"netra-vuln/central/internal/domain"
-	"netra-vuln/internal/wire"
+	"github.com/idnatiya/netra-vuln-agent/pkg/wire"
 )
 
 // Requests are decoded leniently (unknown fields ignored) so newer agents keep

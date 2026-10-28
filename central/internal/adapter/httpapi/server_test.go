@@ -18,7 +18,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 
 	"netra-vuln/central/internal/domain"
-	"netra-vuln/internal/wire"
+	"github.com/idnatiya/netra-vuln-agent/pkg/wire"
 )
 
 type fakeAgent struct {
