@@ -97,6 +97,25 @@ func (d *Dashboard) TriageFinding(ctx context.Context, id int64, status domain.T
 	return d.Store.UpdateFindingTriage(ctx, id, status, note)
 }
 
+// TriageComponent applies one verdict to every unresolved finding of a component.
+func (d *Dashboard) TriageComponent(ctx context.Context, hostID int64, kind domain.ComponentKind, component string,
+	status domain.TriageStatus, note string) (int, error) {
+	f := domain.FindingFilter{HostID: hostID, ComponentKind: kind, Component: component}
+	if err := f.Normalize(); err != nil {
+		return 0, err
+	}
+	if hostID == 0 || kind == "" {
+		return 0, fmt.Errorf("%w: host_id and component are required", domain.ErrInvalid)
+	}
+	if !status.Valid() {
+		return 0, fmt.Errorf("%w: status %q", domain.ErrInvalid, status)
+	}
+	if len(note) > domain.MaxNoteLength {
+		return 0, fmt.Errorf("%w: note longer than %d bytes", domain.ErrInvalid, domain.MaxNoteLength)
+	}
+	return d.Store.UpdateComponentTriage(ctx, hostID, kind, component, status, note)
+}
+
 func (d *Dashboard) RevokeHost(ctx context.Context, id int64) (domain.Host, error) {
 	h, err := d.Store.HostByID(ctx, id)
 	if err != nil {

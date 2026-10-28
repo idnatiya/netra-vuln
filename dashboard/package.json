@@ -13,8 +13,6 @@
   "dependencies": {
     "@lucide/vue": "1.55.0",
     "@tanstack/vue-query": "5.104.5",
-    "@unovis/ts": "1.7.1",
-    "@unovis/vue": "1.7.1",
     "@vueuse/core": "15.0.0",
     "class-variance-authority": "0.7.1",
     "cn": "0.4.0",

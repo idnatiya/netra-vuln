@@ -34,6 +34,13 @@
     group: root
     mode: "0755"
 
+# /usr/bin rather than /usr/local/bin: sudo's secure_path on RHEL 7/8 lacks /usr/local/bin.
+- name: Put vuln-agent on PATH
+  ansible.builtin.file:
+    src: "{{ vuln_agent_bin_dir }}/vuln-agent"
+    dest: /usr/bin/vuln-agent
+    state: link
+
 - name: Read installed Trivy version
   ansible.builtin.command: "{{ vuln_agent_bin_dir }}/trivy version --format json"
   register: vuln_agent_trivy_installed

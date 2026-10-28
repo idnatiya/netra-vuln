@@ -1,30 +1,10 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { computed, type Ref } from 'vue'
-import type { ComponentFilter, FindingFilter, TriageStatus } from '@/domain/models'
+import type { Component, ComponentFilter, FindingFilter, TriageStatus } from '@/domain/models'
 import { useUseCases } from './useUseCases'
 
 // vue-query wrappers around the use cases. Keys start with the resource name so
 // mutations can invalidate everything derived from it.
-
-export function useOverview(client: Ref<string | undefined>) {
-  const uc = useUseCases()
-  return useQuery({ queryKey: ['overview', client], queryFn: () => uc.overview(client.value) })
-}
-
-export function useTrend(client: Ref<string | undefined>, days = 30) {
-  const uc = useUseCases()
-  return useQuery({ queryKey: ['trend', client, days], queryFn: () => uc.trend(client.value, days) })
-}
-
-export function useOldestCVEs(client: Ref<string | undefined>, limit = 10) {
-  const uc = useUseCases()
-  return useQuery({ queryKey: ['oldest', client, limit], queryFn: () => uc.oldestCVEs(client.value, limit) })
-}
-
-export function useDistribution() {
-  const uc = useUseCases()
-  return useQuery({ queryKey: ['distribution'], queryFn: () => uc.distribution() })
-}
 
 export function useHosts(client: Ref<string | undefined>) {
   const uc = useUseCases()
@@ -64,7 +44,17 @@ export function useTriage() {
   const invalidate = useInvalidate()
   return useMutation({
     mutationFn: (v: { id: number, status: TriageStatus, note: string }) => uc.triageFinding(v.id, v.status, v.note),
-    onSuccess: () => invalidate('findings', 'components', 'overview', 'hosts', 'oldest'),
+    onSuccess: () => invalidate('findings', 'components', 'hosts', 'clients'),
+  })
+}
+
+export function useTriageComponent() {
+  const uc = useUseCases()
+  const invalidate = useInvalidate()
+  return useMutation({
+    mutationFn: (v: { component: Pick<Component, 'hostId' | 'kind' | 'key'>, status: TriageStatus, note: string }) =>
+      uc.triageComponent(v.component, v.status, v.note),
+    onSuccess: () => invalidate('findings', 'components', 'hosts', 'clients'),
   })
 }
 
@@ -73,7 +63,7 @@ export function useRevokeHost() {
   const invalidate = useInvalidate()
   return useMutation({
     mutationFn: (id: number) => uc.revokeHost(id),
-    onSuccess: () => invalidate('hosts', 'overview', 'findings', 'components', 'trend', 'oldest', 'distribution', 'clients'),
+    onSuccess: () => invalidate('hosts', 'findings', 'components', 'clients'),
   })
 }
 
@@ -82,7 +72,7 @@ export function useCreateClient() {
   const invalidate = useInvalidate()
   return useMutation({
     mutationFn: (name: string) => uc.createClient(name),
-    onSuccess: () => invalidate('clients', 'overview'),
+    onSuccess: () => invalidate('clients'),
   })
 }
 
@@ -91,6 +81,6 @@ export function useSaveScanConfig() {
   const invalidate = useInvalidate()
   return useMutation({
     mutationFn: (v: { name: string, text: string }) => uc.saveScanConfig(v.name, v.text),
-    onSuccess: () => invalidate('clients', 'overview'),
+    onSuccess: () => invalidate('clients'),
   })
 }

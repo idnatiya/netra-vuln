@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { ChevronLeft, ChevronRight, ExternalLink, Search, X } from '@lucide/vue'
+import { ChevronLeft, ChevronRight, ExternalLink, Search } from '@lucide/vue'
 import { refDebounced } from '@vueuse/core'
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { type Component, type ComponentFilter, type Finding, type FindingFilter, type FindingSort, SEVERITIES, type Severity, TRIAGE_STATUSES, type TriageStatus } from '@/domain/models'
-import { componentLabel, daysSince, pageCount } from '@/domain/rules'
-import ComponentTable from '@/presentation/components/ComponentTable.vue'
+import { type Finding, type FindingFilter, type FindingSort, SEVERITIES, type Severity, TRIAGE_STATUSES, type TriageStatus } from '@/domain/models'
+import { daysSince, pageCount } from '@/domain/rules'
 import SeverityBadge from '@/presentation/components/SeverityBadge.vue'
 import TriageBadge from '@/presentation/components/TriageBadge.vue'
 import TriageDialog from '@/presentation/components/TriageDialog.vue'
@@ -13,9 +12,8 @@ import { Button } from '@/presentation/components/ui/button'
 import { Card, CardContent } from '@/presentation/components/ui/card'
 import { Input } from '@/presentation/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/presentation/components/ui/select'
-import { Tabs, TabsList, TabsTrigger } from '@/presentation/components/ui/tabs'
 import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/presentation/components/ui/table'
-import { useComponents, useFindings, useHosts } from '@/presentation/composables/queries'
+import { useFindings, useHosts } from '@/presentation/composables/queries'
 import { useClientFilter } from '@/presentation/composables/useClientFilter'
 import { formatDateTime, plural } from '@/presentation/lib/format'
 
@@ -34,39 +32,21 @@ const sort = ref<FindingSort>('severity')
 const includeResolved = ref(false)
 const page = ref(1)
 const pageSize = 50
-// "components" groups findings into upgrade actions; "findings" is the flat list.
-const view = ref<'components' | 'findings'>(q('view') === 'findings' || q('q') ? 'findings' : 'components')
-const selected = ref<Component | null>(null)
 
-const baseFilter = computed<ComponentFilter>(() => ({
+const filter = computed<FindingFilter>(() => ({
   client: client.value,
   hostId: hostId.value === ANY ? undefined : Number(hostId.value),
   severity: severity.value === ANY ? undefined : (severity.value as Severity),
   status: status.value === ANY ? undefined : (status.value as TriageStatus),
   query: searchDebounced.value,
   includeResolved: includeResolved.value,
-}))
-const filter = computed<FindingFilter>(() => ({
-  ...baseFilter.value,
-  componentKind: selected.value?.kind,
-  component: selected.value?.key,
   sort: sort.value,
   page: page.value,
   pageSize,
 }))
 // Any filter change goes back to the first page.
-watch(() => [baseFilter.value, selected.value, sort.value], () => (page.value = 1))
-watch(client, () => {
-  hostId.value = ANY
-  selected.value = null
-})
-
-const components = useComponents(baseFilter)
-function openComponent(c: Component) {
-  selected.value = c
-  hostId.value = String(c.hostId)
-  view.value = 'findings'
-}
+watch(() => [client.value, hostId.value, severity.value, status.value, searchDebounced.value, includeResolved.value, sort.value], () => (page.value = 1))
+watch(client, () => (hostId.value = ANY))
 
 const findings = useFindings(filter)
 const data = computed(() => findings.data.value)
@@ -80,12 +60,6 @@ const advisory = (cve: string) =>
 
 <template>
   <div class="grid gap-4">
-    <Tabs v-model="view">
-      <TabsList>
-        <TabsTrigger value="components">Components</TabsTrigger>
-        <TabsTrigger value="findings">All findings</TabsTrigger>
-      </TabsList>
-    </Tabs>
     <Card class="py-3">
       <CardContent class="flex flex-wrap items-center gap-2 px-3">
         <div class="relative min-w-56 flex-1">
@@ -115,7 +89,7 @@ const advisory = (cve: string) =>
             </SelectItem>
           </SelectContent>
         </Select>
-        <Select v-if="view === 'findings'" v-model="sort">
+        <Select v-model="sort">
           <SelectTrigger class="w-40" aria-label="Sort"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="severity">Most severe</SelectItem>
@@ -128,20 +102,6 @@ const advisory = (cve: string) =>
         </label>
       </CardContent>
     </Card>
-
-    <Card v-if="view === 'components'" class="py-0">
-      <ComponentTable
-        :rows="components.data.value ?? []" :loading="components.isFetching.value"
-        :error="components.error.value?.message" @select="openComponent"
-      />
-    </Card>
-    <template v-else>
-    <div v-if="selected" class="flex items-center gap-2 text-sm">
-      <span class="text-muted-foreground">Component:</span>
-      <span class="font-medium">{{ componentLabel(selected).title }}</span>
-      <span class="truncate font-mono text-xs text-muted-foreground">{{ selected.hostname }} · {{ componentLabel(selected).detail }}</span>
-      <Button size="icon-sm" variant="ghost" aria-label="Clear component filter" @click="selected = null"><X /></Button>
-    </div>
 
     <Card class="py-0">
       <Table>
@@ -172,7 +132,7 @@ const advisory = (cve: string) =>
               </div>
             </TableCell>
             <TableCell class="text-sm">
-              <div>{{ f.hostname }}</div>
+              <RouterLink :to="{ name: 'host', params: { id: f.hostId } }" class="hover:underline">{{ f.hostname }}</RouterLink>
               <div class="text-xs text-muted-foreground">{{ f.client }}</div>
             </TableCell>
             <TableCell class="text-right tabular-nums" :title="`first seen ${formatDateTime(f.firstSeen)}`">
@@ -202,7 +162,6 @@ const advisory = (cve: string) =>
         </div>
       </div>
     </Card>
-    </template>
 
     <TriageDialog :finding="triaging" @close="triaging = null" />
   </div>

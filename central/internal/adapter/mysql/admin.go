@@ -28,6 +28,22 @@ func (s *Store) UpdateFindingTriage(ctx context.Context, id int64, status domain
 	return nil
 }
 
+func (s *Store) UpdateComponentTriage(ctx context.Context, hostID int64, kind domain.ComponentKind,
+	component string, status domain.TriageStatus, note string) (int, error) {
+	var n any // NULL for an empty note
+	if note != "" {
+		n = note
+	}
+	res, err := s.q.ExecContext(ctx, `UPDATE findings SET status = ?, note = ?
+		WHERE host_id = ? AND component_kind = ? AND component = ? AND resolved_at IS NULL`,
+		string(status), n, hostID, string(kind), component)
+	if err != nil {
+		return 0, err
+	}
+	rows, _ := res.RowsAffected() // matched rows (ClientFoundRows)
+	return int(rows), nil
+}
+
 // --- admin users & sessions ---
 
 func (s *Store) CreateAdminUser(ctx context.Context, username, passwordHash string, now time.Time) error {

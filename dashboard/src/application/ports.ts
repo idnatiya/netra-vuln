@@ -1,6 +1,5 @@
 import type {
-  Client, Component, ComponentFilter, CVEAge, Distribution, Finding, FindingFilter, Host, Overview, Page, ScanConfig, Session,
-  TrendPoint, TriageStatus,
+  Client, Component, ComponentFilter, Finding, FindingFilter, Host, Page, ScanConfig, Session, TriageStatus,
 } from '@/domain/models'
 
 // Ports implemented by infrastructure (HTTP) and by fakes in tests.
@@ -11,17 +10,12 @@ export interface AuthRepository {
   me(): Promise<Session>
 }
 
-export interface StatsRepository {
-  overview(client?: string): Promise<Overview>
-  trend(client: string | undefined, days: number): Promise<TrendPoint[]>
-  oldestCVEs(client: string | undefined, limit: number): Promise<CVEAge[]>
-  distribution(): Promise<Distribution>
-}
-
 export interface FindingsRepository {
   list(filter: FindingFilter): Promise<Page<Finding>>
   components(filter: ComponentFilter): Promise<Component[]>
   triage(id: number, status: TriageStatus, note: string): Promise<void>
+  /** Triages every unresolved finding of a component; returns how many changed. */
+  triageComponent(c: Pick<Component, 'hostId' | 'kind' | 'key'>, status: TriageStatus, note: string): Promise<number>
 }
 
 export interface HostsRepository {
@@ -39,7 +33,6 @@ export interface ClientsRepository {
 
 export interface Repositories {
   auth: AuthRepository
-  stats: StatsRepository
   findings: FindingsRepository
   hosts: HostsRepository
   clients: ClientsRepository

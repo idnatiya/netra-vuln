@@ -6,8 +6,7 @@ import { createUseCases } from './usecases'
 function fakeRepos() {
   const r = {
     auth: { login: vi.fn(), logout: vi.fn(), me: vi.fn() },
-    stats: { overview: vi.fn(), trend: vi.fn(), oldestCVEs: vi.fn(), distribution: vi.fn() },
-    findings: { list: vi.fn(), triage: vi.fn() },
+    findings: { list: vi.fn(), components: vi.fn(), triage: vi.fn(), triageComponent: vi.fn() },
     hosts: { list: vi.fn(), revoke: vi.fn() },
     clients: { list: vi.fn(), create: vi.fn(async () => 'tok'), setScanConfig: vi.fn(async (_n, c) => c), clearScanConfig: vi.fn() },
   }

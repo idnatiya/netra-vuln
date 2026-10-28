@@ -42,23 +42,90 @@ export function isValidClientName(name: string): boolean {
   return CLIENT_NAME.test(name)
 }
 
-export interface ComponentLabel {
+/** What a component is and how to fix it, for one host. */
+export interface ComponentAdvice {
   title: string
   detail: string
-  /** Extra step after upgrading, e.g. a reboot for the kernel. */
-  hint?: string
+  /** Plain-language next step. */
+  note: string
+  /** Shell command to run on the host, when one applies. */
+  command?: string
+  /** For kernels: whether this version is the one running now. */
+  kernel?: 'running' | 'standby'
 }
 
 const basename = (p: string) => p.split('/').filter(Boolean).pop() ?? p
+const isKernel = (pkgs: string[]) => pkgs.length > 0 && pkgs.every((p) => p.startsWith('linux-') || p.startsWith('kernel'))
+const CACHE_DIRS = ['.m2', '.cache', '.npm', '.gradle', '.cargo']
 
-/** How a component reads in the UI: OS groups by their packages, apps and binaries by their path. */
-export function componentLabel(c: Pick<Component, 'kind' | 'key' | 'packages' | 'pkgCount'>): ComponentLabel {
-  if (c.kind === 'os') {
-    if (c.packages.length && c.packages.every((p) => p.startsWith('linux-'))) {
-      return { title: 'Linux kernel', detail: c.key, hint: 'reboot after upgrade' }
+/**
+ * Whether an installed kernel package version is the running kernel.
+ * Ubuntu: running "6.8.0-147-generic", installed "6.8.0-147.147".
+ * RHEL: running "5.14.0-427.13.1.el9_4.x86_64", installed "5.14.0-427.13.1.el9_4".
+ */
+export function isRunningKernel(installed: string, running: string): boolean {
+  if (!running || !installed) return false
+  const base = running.replace(/-[a-z][a-z0-9]*$/i, '') // drop the flavour, e.g. "-generic"
+  return running.startsWith(installed) || installed === base || installed.startsWith(`${base}.`)
+}
+
+type AdviceHost = Pick<Host, 'osFamily' | 'kernelRunning'>
+type AdviceComponent = Pick<Component, 'kind' | 'key' | 'packages' | 'pkgCount' | 'types'>
+
+export function componentAdvice(c: AdviceComponent, h: AdviceHost): ComponentAdvice {
+  const deb = h.osFamily === 'debian'
+  const pkgs = c.packages.join(' ')
+  const complete = c.packages.length >= c.pkgCount // the package list is capped server-side
+
+  if (c.kind === 'os' && isKernel(c.packages)) {
+    if (isRunningKernel(c.key, h.kernelRunning)) {
+      return {
+        title: 'Linux kernel', detail: c.key, kernel: 'running',
+        note: 'This is the running kernel. Upgrade, then reboot into the new one.',
+        command: deb ? 'sudo apt-get update && sudo apt-get full-upgrade -y && sudo reboot' : "sudo dnf upgrade -y 'kernel*' && sudo reboot",
+      }
     }
-    const more = c.pkgCount - Math.min(c.packages.length, 2)
-    return { title: c.packages.slice(0, 2).join(', ') + (more > 0 ? ` +${more}` : ''), detail: c.key }
+    return {
+      title: 'Linux kernel', detail: c.key, kernel: 'standby',
+      note: `Not running (the host booted ${h.kernelRunning || 'another kernel'}). Kept as a fallback; remove it once the running kernel is fine.`,
+      command: deb
+        ? `dpkg -l 'linux-*${c.key.replace(/\.[^.]*$/, '')}*' | awk '/^ii/{print $2}' | xargs sudo apt-get purge -y`
+        : `sudo dnf remove 'kernel*-${c.key}*'`,
+    }
   }
-  return { title: basename(c.key), detail: c.key }
+  if (c.kind === 'os') {
+    const more = c.pkgCount - Math.min(c.packages.length, 2)
+    return {
+      title: c.packages.slice(0, 2).join(', ') + (more > 0 ? ` +${more}` : ''), detail: c.key,
+      note: 'Upgrade these OS packages.',
+      command: deb
+        ? `sudo apt-get update && sudo apt-get install --only-upgrade -y ${complete ? pkgs : '$(apt list --upgradable 2>/dev/null | cut -d/ -f1 | tail -n +2)'}`
+        : `sudo dnf upgrade -y ${complete ? pkgs : ''}`.trimEnd(),
+    }
+  }
+  if (c.kind === 'binary') {
+    return {
+      title: basename(c.key), detail: c.key,
+      note: 'A compiled binary with outdated libraries. Upgrade the package or app that ships it; this finds the package:',
+      command: deb ? `dpkg -S ${c.key}` : `rpm -qf ${c.key}`,
+    }
+  }
+  const title = basename(c.key)
+  if (CACHE_DIRS.includes(title)) {
+    return { title, detail: c.key, note: 'A package cache, not a running app. Clear it, or accept the risk for this component.' }
+  }
+  const has = (...t: string[]) => c.types.some((x) => t.includes(x))
+  if (has('composer', 'composer-vendor')) {
+    return { title, detail: c.key, note: 'PHP app (Composer). Update the dependencies, test, and deploy.', command: `cd ${c.key} && composer update --with-dependencies ${pkgs}` }
+  }
+  if (has('node-pkg', 'npm', 'yarn', 'pnpm')) {
+    return { title, detail: c.key, note: 'Node.js app. Update the dependencies, rebuild, and deploy.', command: `cd ${c.key} && npm update ${pkgs}` }
+  }
+  if (has('python-pkg', 'pip', 'pipenv', 'poetry', 'uv')) {
+    return { title, detail: c.key, note: "Python packages. Upgrade them in the app's environment.", command: `pip install -U ${pkgs}` }
+  }
+  if (has('jar', 'pom', 'gradle', 'sbt')) {
+    return { title, detail: c.key, note: 'Java app. Bump the dependencies in its build, rebuild, and deploy.' }
+  }
+  return { title, detail: c.key, note: 'Update the dependencies of this app.' }
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Building2, LayoutDashboard, LogOut, Server, ShieldAlert, ShieldCheck } from '@lucide/vue'
+import { Building2, LogOut, Search, Server, ShieldCheck } from '@lucide/vue'
 import { useQueryClient } from '@tanstack/vue-query'
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -19,9 +19,8 @@ const { client } = useClientFilter()
 const clients = useClients()
 
 const nav = [
-  { name: 'overview', label: 'Overview', icon: LayoutDashboard },
-  { name: 'findings', label: 'Findings', icon: ShieldAlert },
   { name: 'hosts', label: 'Hosts', icon: Server },
+  { name: 'findings', label: 'Search CVEs', icon: Search },
   { name: 'clients', label: 'Clients', icon: Building2 },
 ] as const
 
@@ -74,7 +73,7 @@ async function logout() {
             <component :is="item.icon" class="size-4" />
           </RouterLink>
         </nav>
-        <h1 class="hidden text-sm font-medium md:block">{{ nav.find((n) => n.name === route.name)?.label }}</h1>
+        <h1 class="hidden text-sm font-medium md:block">{{ nav.find((n) => n.name === route.name)?.label ?? 'Hosts' }}</h1>
         <div class="ml-auto flex items-center gap-2">
           <Select v-model="selected">
             <SelectTrigger class="w-44" aria-label="Client filter">

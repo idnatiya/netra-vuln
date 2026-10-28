@@ -1,9 +1,8 @@
 import type { Repositories } from '@/application/ports'
 import type { ComponentFilter, ScanConfig } from '@/domain/models'
 import {
-  type ClientDTO, type ComponentDTO, type CVEAgeDTO, type DistributionDTO, type FindingDTO, type HostDTO, type OverviewDTO,
-  type PageDTO, type SessionDTO, type TrendDTO,
-  toClient, toComponent, toCVEAge, toFinding, toHost, toOverview, toSession, toTrend,
+  type ClientDTO, type ComponentDTO, type FindingDTO, type HostDTO, type PageDTO, type SessionDTO,
+  toClient, toComponent, toFinding, toHost, toSession,
 } from './dto'
 import type { HttpClient } from './http'
 
@@ -22,15 +21,6 @@ export function createHttpRepositories(http: HttpClient): Repositories {
       logout: () => http.request<void>('POST', '/logout'),
       me: async () => toSession(await http.get<SessionDTO>('/me')),
     },
-    stats: {
-      overview: async (client) => toOverview(await http.get<OverviewDTO>('/overview', { client })),
-      trend: async (client, days) => (await http.get<TrendDTO[]>('/trend', { client, days })).map(toTrend),
-      oldestCVEs: async (client, limit) => (await http.get<CVEAgeDTO[]>('/oldest-cves', { client, limit })).map(toCVEAge),
-      distribution: async () => {
-        const d = await http.get<DistributionDTO>('/distribution')
-        return { os: d.os, agentVersions: d.agent_versions, trivyVersions: d.trivy_versions }
-      },
-    },
     findings: {
       list: async (f) => {
         const p = await http.get<PageDTO<FindingDTO>>('/findings', {
@@ -40,6 +30,9 @@ export function createHttpRepositories(http: HttpClient): Repositories {
       },
       components: async (f) => (await http.get<ComponentDTO[]>('/components', filterParams(f))).map(toComponent),
       triage: (id, status, note) => http.request<void>('PATCH', `/findings/${id}`, { status, note }),
+      triageComponent: async (c, status, note) => (await http.request<{ updated: number }>('POST', '/components/triage', {
+        host_id: c.hostId, kind: c.kind, key: c.key, status, note,
+      })).updated,
     },
     hosts: {
       list: async (client) => (await http.get<HostDTO[]>('/hosts', { client })).map(toHost),

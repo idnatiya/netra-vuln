@@ -1,125 +1,72 @@
 <script setup lang="ts">
+import { Search } from '@lucide/vue'
 import { computed, ref } from 'vue'
-import { toast } from 'vue-sonner'
 import type { Host } from '@/domain/models'
-import { type HostHealth, hostHealth, hostIssues } from '@/domain/rules'
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
-  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from '@/presentation/components/ui/alert-dialog'
-import { Badge } from '@/presentation/components/ui/badge'
-import { Button } from '@/presentation/components/ui/button'
-import { Card } from '@/presentation/components/ui/card'
-import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/presentation/components/ui/table'
-import { useHosts, useRevokeHost } from '@/presentation/composables/queries'
+import { hostHealth, hostIssues } from '@/domain/rules'
+import HostCard from '@/presentation/components/HostCard.vue'
+import { Input } from '@/presentation/components/ui/input'
+import { useHosts } from '@/presentation/composables/queries'
 import { useClientFilter } from '@/presentation/composables/useClientFilter'
-import { errorMessage, formatDateTime, plural, relative } from '@/presentation/lib/format'
+import { plural } from '@/presentation/lib/format'
 
 const { client } = useClientFilter()
 const hosts = useHosts(client)
-const revoke = useRevokeHost()
+const search = ref('')
 const showRevoked = ref(false)
-const revoking = ref<Host | null>(null)
 
-const rows = computed(() => (hosts.data.value ?? []).filter((h) => showRevoked.value || !h.revokedAt))
-const dot: Record<HostHealth, string> = { healthy: 'bg-ok', attention: 'bg-sev-medium', stale: 'bg-sev-critical', revoked: 'bg-muted-foreground/40' }
+const worstFirst = (a: Host, b: Host) =>
+  Number(hostHealth(b) === 'stale') - Number(hostHealth(a) === 'stale')
+  || b.openCritical - a.openCritical || b.openHigh - a.openHigh || a.hostname.localeCompare(b.hostname)
 
-async function confirmRevoke() {
-  const h = revoking.value
-  if (!h) return
-  try {
-    await revoke.mutateAsync(h.id)
-    toast.success(`${h.client}/${h.hostname} revoked. Its agent must re-enroll to report again.`)
-  } catch (e) {
-    toast.error(errorMessage(e))
-  } finally {
-    revoking.value = null
-  }
-}
+const visible = computed(() => {
+  const q = search.value.trim().toLowerCase()
+  return (hosts.data.value ?? [])
+    .filter((h) => showRevoked.value || !h.revokedAt)
+    .filter((h) => !q || h.hostname.toLowerCase().includes(q) || h.client.toLowerCase().includes(q))
+})
+
+const groups = computed(() => {
+  const by = new Map<string, Host[]>()
+  for (const h of visible.value) by.set(h.client, [...(by.get(h.client) ?? []), h])
+  return [...by].map(([name, list]) => ({ name, hosts: list.sort(worstFirst) }))
+})
+
+const summary = computed(() => {
+  const active = visible.value.filter((h) => !h.revokedAt)
+  const count = (pred: (h: Host) => boolean) => active.filter(pred).length
+  return [
+    plural(active.length, 'host'),
+    `${count((h) => h.openCritical > 0)} with critical findings`,
+    `${count((h) => hostHealth(h) === 'stale')} not reporting`,
+    `${count((h) => h.rebootRequired)} waiting for a reboot`,
+  ]
+})
 </script>
 
 <template>
-  <div class="grid gap-4">
-    <div class="flex items-center justify-between">
-      <p class="text-sm text-muted-foreground">{{ plural(rows.length, 'host') }}</p>
+  <div class="grid gap-6">
+    <div class="flex flex-wrap items-center gap-3">
+      <p class="text-sm text-muted-foreground">{{ summary.join(' · ') }}</p>
+      <div class="relative ml-auto w-full sm:w-64">
+        <Search class="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input v-model="search" class="pl-8" placeholder="Find a host" aria-label="Find a host" />
+      </div>
       <label class="flex items-center gap-2 text-sm text-muted-foreground">
         <input v-model="showRevoked" type="checkbox" class="accent-primary"> Show revoked
       </label>
     </div>
-    <Card class="py-0">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Host</TableHead>
-            <TableHead>System</TableHead>
-            <TableHead>Last heartbeat</TableHead>
-            <TableHead>Last scan</TableHead>
-            <TableHead class="text-right">Critical</TableHead>
-            <TableHead class="text-right">High</TableHead>
-            <TableHead>Issues</TableHead>
-            <TableHead class="w-24" />
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          <TableRow v-for="h in rows" :key="h.id" :class="h.revokedAt && 'opacity-60'">
-            <TableCell>
-              <div class="flex items-center gap-2">
-                <span :class="['size-2 shrink-0 rounded-full', dot[hostHealth(h)]]" :title="hostHealth(h)" />
-                <div>
-                  <div class="font-medium">{{ h.hostname }}</div>
-                  <div class="text-xs text-muted-foreground">{{ h.client }}</div>
-                </div>
-              </div>
-            </TableCell>
-            <TableCell class="text-sm">
-              <div>{{ h.osName }} {{ h.osVersion }} <span class="text-muted-foreground">{{ h.arch }}</span></div>
-              <div class="text-xs text-muted-foreground">agent {{ h.agentVersion || '?' }} · trivy {{ h.trivyVersion || '?' }}</div>
-            </TableCell>
-            <TableCell class="text-sm" :class="h.staleHeartbeat && !h.revokedAt && 'text-sev-critical'" :title="formatDateTime(h.lastHeartbeatAt)">
-              {{ relative(h.lastHeartbeatAt) }}
-            </TableCell>
-            <TableCell class="text-sm" :title="formatDateTime(h.lastScanAt)">
-              <span :class="h.lastScanStatus === 'error' && 'text-sev-critical'">{{ relative(h.lastScanAt) }}</span>
-              <span v-if="h.lastScanStatus === 'error'" class="block text-xs text-sev-critical">failed</span>
-            </TableCell>
-            <TableCell class="text-right tabular-nums">
-              <RouterLink :to="{ name: 'findings', query: { client: h.client, host_id: h.id, severity: 'CRITICAL' } }" :class="{ 'font-semibold text-sev-critical hover:underline': h.openCritical > 0 }">
-                {{ h.openCritical }}
-              </RouterLink>
-            </TableCell>
-            <TableCell class="text-right tabular-nums">
-              <RouterLink :to="{ name: 'findings', query: { client: h.client, host_id: h.id, severity: 'HIGH' } }" :class="{ 'text-sev-high hover:underline': h.openHigh > 0 }">
-                {{ h.openHigh }}
-              </RouterLink>
-            </TableCell>
-            <TableCell class="max-w-56">
-              <div class="flex flex-wrap gap-1">
-                <Badge v-for="i in hostIssues(h)" :key="i" variant="outline" class="text-[11px]">{{ i }}</Badge>
-              </div>
-            </TableCell>
-            <TableCell>
-              <Button v-if="!h.revokedAt" size="sm" variant="destructive" @click="revoking = h">Revoke</Button>
-            </TableCell>
-          </TableRow>
-          <TableEmpty v-if="hosts.isSuccess.value && !rows.length" :colspan="8">No hosts enrolled yet.</TableEmpty>
-        </TableBody>
-      </Table>
-    </Card>
 
-    <AlertDialog :open="!!revoking" @update:open="(o) => !o && (revoking = null)">
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Revoke {{ revoking?.client }}/{{ revoking?.hostname }}?</AlertDialogTitle>
-          <AlertDialogDescription>
-            The host token stops working immediately, so the agent can no longer send reports or heartbeats.
-            Finding history is kept. To bring the host back, re-enroll it with the client's enroll token.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction :disabled="revoke.isPending.value" @click="confirmRevoke">Revoke host</AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <p v-if="hosts.isSuccess.value && !groups.length" class="text-sm text-muted-foreground">
+      No hosts yet. Create a client, then enroll its VMs with the Ansible role.
+    </p>
+
+    <section v-for="g in groups" :key="g.name" class="grid gap-3">
+      <h2 class="text-sm font-medium">
+        {{ g.name }} <span class="font-normal text-muted-foreground">· {{ plural(g.hosts.length, 'host') }}</span>
+      </h2>
+      <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <HostCard v-for="h in g.hosts" :key="h.id" :host="h" :issues="hostIssues(h)" />
+      </div>
+    </section>
   </div>
 </template>

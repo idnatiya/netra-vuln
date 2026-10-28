@@ -37,6 +37,8 @@ type Dashboard interface {
 	OldestCVEs(ctx context.Context, clientName string, limit int) ([]domain.CVEAge, error)
 	Distribution(ctx context.Context) (domain.Distribution, error)
 	TriageFinding(ctx context.Context, id int64, status domain.TriageStatus, note string) error
+	TriageComponent(ctx context.Context, hostID int64, kind domain.ComponentKind, component string,
+		status domain.TriageStatus, note string) (int, error)
 	RevokeHost(ctx context.Context, id int64) (domain.Host, error)
 	CreateClient(ctx context.Context, name string) (string, error)
 	SetScanConfig(ctx context.Context, clientName string, cfg []byte) error
@@ -62,6 +64,7 @@ func (s *Server) MountAdmin(auth AdminAuth, dash Dashboard) {
 	g.Post("/hosts/:id/revoke", need, a.revokeHost)
 	g.Get("/findings", need, a.findings)
 	g.Get("/components", need, a.components)
+	g.Post("/components/triage", need, a.triageComponent)
 	g.Patch("/findings/:id", need, a.triage)
 	g.Get("/trend", need, a.trend)
 	g.Get("/oldest-cves", need, a.oldestCVEs)
@@ -296,6 +299,25 @@ func (a *adminRoutes) triage(c fiber.Ctx) error {
 	a.s.log.Info("finding triaged", "id", id, "status", req.Status,
 		"by", fiber.Locals[domain.Session](c, sessionKey).Username)
 	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func (a *adminRoutes) triageComponent(c fiber.Ctx) error {
+	body, err := smallBody(c)
+	if err != nil {
+		return err
+	}
+	var req componentTriageRequest
+	if err := decodeJSON(body, &req); err != nil {
+		return err
+	}
+	n, err := a.dash.TriageComponent(c.Context(), req.HostID, domain.ComponentKind(req.Kind), req.Key,
+		domain.TriageStatus(req.Status), req.Note)
+	if err != nil {
+		return err
+	}
+	a.s.log.Info("component triaged", "host_id", req.HostID, "kind", req.Kind, "component", req.Key,
+		"status", req.Status, "findings", n, "by", fiber.Locals[domain.Session](c, sessionKey).Username)
+	return c.JSON(componentTriageResponse{Updated: n})
 }
 
 func (a *adminRoutes) trend(c fiber.Ctx) error {

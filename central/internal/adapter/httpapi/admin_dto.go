@@ -71,6 +71,9 @@ type hostDTO struct {
 	FalsePositive     int        `json:"false_positive"`
 	StaleScan         bool       `json:"stale_scan"`
 	StaleHeartbeat    bool       `json:"stale_heartbeat"`
+	NewInLastScan     int        `json:"new_in_last_scan"`
+	ResolvedLastScan  int        `json:"resolved_in_last_scan"`
+	FirstScan         bool       `json:"first_scan"`
 }
 
 type findingDTO struct {
@@ -103,6 +106,7 @@ type componentDTO struct {
 	Kind      string    `json:"kind"`
 	Key       string    `json:"key"`
 	Packages  []string  `json:"packages"`
+	Types     []string  `json:"types"`
 	PkgCount  int       `json:"pkg_count"`
 	Findings  int       `json:"findings"`
 	CVEs      int       `json:"cves"`
@@ -114,7 +118,7 @@ type componentDTO struct {
 func toComponentDTO(r domain.ComponentRow) componentDTO {
 	return componentDTO{
 		HostID: r.HostID, Client: r.ClientName, Hostname: r.Hostname, Kind: string(r.Kind), Key: r.Key,
-		Packages: r.Packages, PkgCount: r.PkgCount, Findings: r.Findings, CVEs: r.CVEs,
+		Packages: r.Packages, Types: r.Types, PkgCount: r.PkgCount, Findings: r.Findings, CVEs: r.CVEs,
 		Critical: r.Critical, High: r.High, FirstSeen: r.FirstSeen,
 	}
 }
@@ -129,6 +133,18 @@ type pageDTO[T any] struct {
 type triageRequest struct {
 	Status string `json:"status"`
 	Note   string `json:"note"`
+}
+
+type componentTriageRequest struct {
+	HostID int64  `json:"host_id"`
+	Kind   string `json:"kind"`
+	Key    string `json:"key"`
+	Status string `json:"status"`
+	Note   string `json:"note"`
+}
+
+type componentTriageResponse struct {
+	Updated int `json:"updated"`
 }
 
 type createClientRequest struct {
@@ -193,6 +209,7 @@ func toHostDTO(h domain.HostRow) hostDTO {
 		CreatedAt: h.CreatedAt, RevokedAt: h.RevokedAt,
 		OpenCritical: h.OpenCritical, OpenHigh: h.OpenHigh, Accepted: h.Accepted, FalsePositive: h.FalsePositive,
 		StaleScan: h.StaleScan, StaleHeartbeat: h.StaleHeartbeat,
+		NewInLastScan: h.NewInLastScan, ResolvedLastScan: h.ResolvedInLastScan, FirstScan: h.FirstScan,
 	}
 }
 

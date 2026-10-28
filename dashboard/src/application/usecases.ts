@@ -1,9 +1,17 @@
-import type { ComponentFilter, FindingFilter, ScanConfig, TriageStatus } from '@/domain/models'
+import type { Component, ComponentFilter, FindingFilter, ScanConfig, TriageStatus } from '@/domain/models'
 import { isValidClientName, triageNeedsNote } from '@/domain/rules'
 import { ApiError } from './errors'
 import type { Repositories } from './ports'
 
 // Use cases: validation and orchestration on top of the ports. Views call these only.
+
+/** Trimmed triage note; accepting or dismissing needs one. */
+function triageNote(status: TriageStatus, note: string): string {
+  const n = note.trim()
+  if (triageNeedsNote(status) && !n) throw new ApiError('a note is required when accepting or dismissing a finding', 400)
+  if (n.length > 2000) throw new ApiError('note is longer than 2000 characters', 400)
+  return n
+}
 
 export function createUseCases(r: Repositories) {
   return {
@@ -14,19 +22,13 @@ export function createUseCases(r: Repositories) {
     logout: () => r.auth.logout(),
     currentSession: () => r.auth.me(),
 
-    overview: (client?: string) => r.stats.overview(client),
-    trend: (client?: string, days = 30) => r.stats.trend(client, days),
-    oldestCVEs: (client?: string, limit = 10) => r.stats.oldestCVEs(client, limit),
-    distribution: () => r.stats.distribution(),
-
     listFindings: (filter: FindingFilter) => r.findings.list({ ...filter, query: filter.query?.trim() || undefined }),
     listComponents: (filter: ComponentFilter) => r.findings.components({ ...filter, query: filter.query?.trim() || undefined }),
     triageFinding: async (id: number, status: TriageStatus, note: string) => {
-      const n = note.trim()
-      if (triageNeedsNote(status) && !n) throw new ApiError('a note is required when accepting or dismissing a finding', 400)
-      if (n.length > 2000) throw new ApiError('note is longer than 2000 characters', 400)
-      await r.findings.triage(id, status, n)
+      await r.findings.triage(id, status, triageNote(status, note))
     },
+    triageComponent: (c: Pick<Component, 'hostId' | 'kind' | 'key'>, status: TriageStatus, note: string) =>
+      r.findings.triageComponent(c, status, triageNote(status, note)),
 
     listHosts: (client?: string) => r.hosts.list(client),
     revokeHost: (id: number) => r.hosts.revoke(id),

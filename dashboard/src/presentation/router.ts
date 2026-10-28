@@ -11,9 +11,10 @@ export function createAppRouter(uc: UseCases) {
         path: '/',
         component: () => import('./layouts/AppLayout.vue'),
         children: [
-          { path: '', name: 'overview', component: () => import('./views/OverviewView.vue') },
+          { path: '', name: 'hosts', component: () => import('./views/HostsView.vue') },
+          { path: 'hosts/:id(\\d+)', name: 'host', component: () => import('./views/HostDetailView.vue') },
+          { path: 'hosts', redirect: '/' },
           { path: 'findings', name: 'findings', component: () => import('./views/FindingsView.vue') },
-          { path: 'hosts', name: 'hosts', component: () => import('./views/HostsView.vue') },
           { path: 'clients', name: 'clients', component: () => import('./views/ClientsView.vue') },
         ],
       },

@@ -1,5 +1,5 @@
 import type {
-  Client, Component, ComponentKind, Count, CVEAge, Finding, Host, Overview, ScanConfig, Session, Severity, TrendPoint, TriageStatus,
+  Client, Component, ComponentKind, Finding, Host, ScanConfig, Session, Severity, TriageStatus,
 } from '@/domain/models'
 
 // Shapes returned by central's admin API (snake_case) and their mapping to domain types.
@@ -18,21 +18,6 @@ export const toClient = (d: ClientDTO): Client => ({
   openCritical: d.open_critical, openHigh: d.open_high,
 })
 
-export interface OverviewDTO {
-  totals: {
-    clients: number, hosts: number, open_critical: number, open_high: number, accepted: number,
-    false_positive: number, stale_hosts: number, reboot_required: number, auto_update_off: number
-  }
-  clients: ClientDTO[]
-}
-export const toOverview = (d: OverviewDTO): Overview => ({
-  totals: {
-    clients: d.totals.clients, hosts: d.totals.hosts, openCritical: d.totals.open_critical,
-    openHigh: d.totals.open_high, accepted: d.totals.accepted, falsePositive: d.totals.false_positive,
-    staleHosts: d.totals.stale_hosts, rebootRequired: d.totals.reboot_required, autoUpdateOff: d.totals.auto_update_off,
-  },
-  clients: d.clients.map(toClient),
-})
 
 export interface HostDTO {
   id: number, client: string, hostname: string, os_family: string, os_name: string, os_version: string,
@@ -40,7 +25,8 @@ export interface HostDTO {
   auto_update_enabled: boolean, last_heartbeat_at: string | null, last_scan_at: string | null,
   last_scan_status: 'ok' | 'error' | '', last_ok_scan_at: string | null, created_at: string,
   revoked_at: string | null, open_critical: number, open_high: number, accepted: number,
-  false_positive: number, stale_scan: boolean, stale_heartbeat: boolean
+  false_positive: number, stale_scan: boolean, stale_heartbeat: boolean, new_in_last_scan: number,
+  resolved_in_last_scan: number, first_scan: boolean
 }
 export const toHost = (d: HostDTO): Host => ({
   id: d.id, client: d.client, hostname: d.hostname, osFamily: d.os_family, osName: d.os_name,
@@ -50,6 +36,7 @@ export const toHost = (d: HostDTO): Host => ({
   lastScanStatus: d.last_scan_status, lastOkScanAt: maybeDate(d.last_ok_scan_at), createdAt: date(d.created_at),
   revokedAt: maybeDate(d.revoked_at), openCritical: d.open_critical, openHigh: d.open_high,
   accepted: d.accepted, falsePositive: d.false_positive, staleScan: d.stale_scan, staleHeartbeat: d.stale_heartbeat,
+  newInLastScan: d.new_in_last_scan, resolvedInLastScan: d.resolved_in_last_scan, firstScan: d.first_scan,
 })
 
 export interface FindingDTO {
@@ -67,23 +54,14 @@ export const toFinding = (d: FindingDTO): Finding => ({
 })
 
 export interface ComponentDTO {
-  host_id: number, client: string, hostname: string, kind: ComponentKind, key: string, packages: string[],
+  host_id: number, client: string, hostname: string, kind: ComponentKind, key: string, packages: string[], types: string[],
   pkg_count: number, findings: number, cves: number, critical: number, high: number, first_seen: string
 }
 export const toComponent = (d: ComponentDTO): Component => ({
-  hostId: d.host_id, client: d.client, hostname: d.hostname, kind: d.kind, key: d.key, packages: d.packages,
+  hostId: d.host_id, client: d.client, hostname: d.hostname, kind: d.kind, key: d.key, packages: d.packages, types: d.types,
   pkgCount: d.pkg_count, findings: d.findings, cves: d.cves, critical: d.critical, high: d.high,
   firstSeen: date(d.first_seen),
 })
 
 export interface PageDTO<T> { items: T[], total: number, page: number, page_size: number }
 
-export interface TrendDTO { day: string, critical: number, high: number }
-export const toTrend = (d: TrendDTO): TrendPoint => ({ day: date(`${d.day}T00:00:00Z`), critical: d.critical, high: d.high })
-
-export interface CVEAgeDTO { cve: string, severity: Severity, title: string, first_seen: string, hosts: number }
-export const toCVEAge = (d: CVEAgeDTO): CVEAge => ({
-  cve: d.cve, severity: d.severity, title: d.title, firstSeen: date(d.first_seen), hosts: d.hosts,
-})
-
-export interface DistributionDTO { os: Count[], agent_versions: Count[], trivy_versions: Count[] }

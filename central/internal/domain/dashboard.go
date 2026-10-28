@@ -40,6 +40,11 @@ type HostRow struct {
 	FalsePositive  int
 	StaleScan      bool // no successful scan within StaleScanAfter
 	StaleHeartbeat bool // no heartbeat within StaleHeartbeatAfter
+	// Effect of the last scan, when it succeeded: findings it opened and resolved.
+	// FirstScan means there was nothing to compare against.
+	NewInLastScan      int
+	ResolvedInLastScan int
+	FirstScan          bool
 }
 
 // MarkStale sets the stale flags for an active host.
@@ -200,6 +205,7 @@ type ComponentRow struct {
 	Kind       ComponentKind
 	Key        string
 	Packages   []string // distinct package names, capped
+	Types      []string // distinct Trivy result types (e.g. ubuntu, composer-vendor, node-pkg)
 	PkgCount   int
 	Findings   int
 	CVEs       int

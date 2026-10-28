@@ -14,7 +14,13 @@ import (
 func (s *Store) HostRows(ctx context.Context, clientName string) ([]domain.HostRow, error) {
 	rows, err := s.q.QueryContext(ctx, `SELECT `+hostColumns+`,
 		(SELECT MAX(sc.scanned_at) FROM scans sc WHERE sc.host_id = h.id AND sc.status = 'ok'),
-		COALESCE(f.crit, 0), COALESCE(f.high, 0), COALESCE(f.acc, 0), COALESCE(f.fp, 0)
+		COALESCE(f.crit, 0), COALESCE(f.high, 0), COALESCE(f.acc, 0), COALESCE(f.fp, 0),
+		-- Ingest stamps first_seen and resolved_at with the scan's last_scan_at.
+		(SELECT COUNT(*) FROM findings x WHERE x.host_id = h.id AND h.last_scan_status = 'ok'
+			AND x.first_seen = h.last_scan_at),
+		(SELECT COUNT(*) FROM findings x WHERE x.host_id = h.id AND h.last_scan_status = 'ok'
+			AND x.resolved_at = h.last_scan_at),
+		(SELECT COUNT(*) FROM scans sc WHERE sc.host_id = h.id AND sc.status = 'ok') <= 1
 		FROM hosts h
 		JOIN clients c ON c.id = h.client_id
 		LEFT JOIN (
@@ -35,7 +41,8 @@ func (s *Store) HostRows(ctx context.Context, clientName string) ([]domain.HostR
 	for rows.Next() {
 		var r domain.HostRow
 		var lastOK sql.NullTime
-		h, err := scanHost(rows, &lastOK, &r.OpenCritical, &r.OpenHigh, &r.Accepted, &r.FalsePositive)
+		h, err := scanHost(rows, &lastOK, &r.OpenCritical, &r.OpenHigh, &r.Accepted, &r.FalsePositive,
+			&r.NewInLastScan, &r.ResolvedInLastScan, &r.FirstScan)
 		if err != nil {
 			return nil, err
 		}
@@ -125,10 +132,10 @@ func (s *Store) Components(ctx context.Context, f domain.FindingFilter) ([]domai
 	from, args := findingsFrom(f)
 	rows, err := s.q.QueryContext(ctx, `SELECT f.host_id, c.name, h.hostname, f.component_kind, f.component,
 		SUBSTRING_INDEX(GROUP_CONCAT(DISTINCT f.pkg ORDER BY f.pkg SEPARATOR '\n'), '\n', ?),
-		COUNT(DISTINCT f.pkg), COUNT(*), COUNT(DISTINCT f.cve),
+		GROUP_CONCAT(DISTINCT f.type ORDER BY f.type SEPARATOR '\n'), COUNT(DISTINCT f.pkg), COUNT(*), COUNT(DISTINCT f.cve),
 		SUM(f.severity = 'CRITICAL'), SUM(f.severity = 'HIGH'), MIN(f.first_seen)`+from+`
 		GROUP BY f.host_id, c.name, h.hostname, f.component_kind, f.component
-		ORDER BY 10 DESC, 11 DESC, 8 DESC, f.component LIMIT 1000`,
+		ORDER BY 11 DESC, 12 DESC, 9 DESC, f.component LIMIT 1000`,
 		append([]any{maxComponentPackages}, args...)...)
 	if err != nil {
 		return nil, err
@@ -137,12 +144,12 @@ func (s *Store) Components(ctx context.Context, f domain.FindingFilter) ([]domai
 	out := []domain.ComponentRow{}
 	for rows.Next() {
 		var r domain.ComponentRow
-		var pkgs string
-		if err := rows.Scan(&r.HostID, &r.ClientName, &r.Hostname, &r.Kind, &r.Key, &pkgs,
+		var pkgs, types string
+		if err := rows.Scan(&r.HostID, &r.ClientName, &r.Hostname, &r.Kind, &r.Key, &pkgs, &types,
 			&r.PkgCount, &r.Findings, &r.CVEs, &r.Critical, &r.High, &r.FirstSeen); err != nil {
 			return nil, err
 		}
-		r.Packages = strings.Split(pkgs, "\n")
+		r.Packages, r.Types = strings.Split(pkgs, "\n"), strings.Split(types, "\n")
 		out = append(out, r)
 	}
 	return out, rows.Err()

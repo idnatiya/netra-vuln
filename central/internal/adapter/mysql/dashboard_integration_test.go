@@ -209,4 +209,34 @@ func TestComponents(t *testing.T) {
 	if err != nil || page.Total != 1 || page.Items[0].PkgPath != "var/www/shop/vendor/composer/installed.json" {
 		t.Fatalf("drill-down: %+v %v", page, err)
 	}
+	if len(k.Types) != 1 || k.Types[0] != "ubuntu" {
+		t.Fatalf("kernel types = %v", k.Types)
+	}
+
+	// Triage a whole component at once; it leaves the open counts.
+	n, err := d.TriageComponent(ctx, h.ID, domain.ComponentOS, k.Key, domain.TriageAccepted, "fallback kernel")
+	if err != nil || n != 3 {
+		t.Fatalf("triage component: %d %v", n, err)
+	}
+	rows, _ = d.Components(ctx, domain.FindingFilter{HostID: h.ID, Status: domain.TriageOpen})
+	if len(rows) != 2 {
+		t.Fatalf("open components after triage = %+v", rows)
+	}
+
+	// Last-scan changes: the first scan has nothing to compare against; a second
+	// scan without the blog app resolves it and adds one new kernel CVE.
+	hosts, _ := d.Hosts(ctx, "client_a")
+	if !hosts[0].FirstScan || hosts[0].NewInLastScan != 5 {
+		t.Fatalf("after first scan = %+v", hosts[0])
+	}
+	e.tick()
+	e.ingestFindings(t, h,
+		kernel("CVE-1", "linux-libc-dev"), kernel("CVE-1", "linux-tools-common"), kernel("CVE-2", "linux-libc-dev"),
+		kernel("CVE-3", "linux-libc-dev"),
+		app("CVE-9", "laravel/framework", "var/www/shop/vendor/composer/installed.json"),
+	)
+	hosts, _ = d.Hosts(ctx, "client_a")
+	if hosts[0].FirstScan || hosts[0].NewInLastScan != 1 || hosts[0].ResolvedInLastScan != 1 {
+		t.Fatalf("after second scan = %+v", hosts[0])
+	}
 }

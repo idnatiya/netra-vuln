@@ -11,18 +11,6 @@ export interface Session {
   expiresAt: Date
 }
 
-export interface Totals {
-  clients: number
-  hosts: number
-  openCritical: number
-  openHigh: number
-  accepted: number
-  falsePositive: number
-  staleHosts: number
-  rebootRequired: number
-  autoUpdateOff: number
-}
-
 export interface ScanConfig {
   severity?: Severity[]
   ignore_unfixed?: boolean
@@ -37,11 +25,6 @@ export interface Client {
   hosts: number
   openCritical: number
   openHigh: number
-}
-
-export interface Overview {
-  totals: Totals
-  clients: Client[]
 }
 
 export interface Host {
@@ -69,6 +52,10 @@ export interface Host {
   falsePositive: number
   staleScan: boolean
   staleHeartbeat: boolean
+  /** Findings the last scan opened / resolved; firstScan means nothing to compare against. */
+  newInLastScan: number
+  resolvedInLastScan: number
+  firstScan: boolean
 }
 
 export interface Finding {
@@ -107,6 +94,8 @@ export interface Component {
   kind: ComponentKind
   key: string
   packages: string[]
+  /** Trivy result types, e.g. ubuntu, composer-vendor, node-pkg. */
+  types: string[]
   pkgCount: number
   findings: number
   cves: number
@@ -138,27 +127,3 @@ export interface Page<T> {
   pageSize: number
 }
 
-export interface TrendPoint {
-  day: Date
-  critical: number
-  high: number
-}
-
-export interface CVEAge {
-  cve: string
-  severity: Severity
-  title: string
-  firstSeen: Date
-  hosts: number
-}
-
-export interface Count {
-  key: string
-  n: number
-}
-
-export interface Distribution {
-  os: Count[]
-  agentVersions: Count[]
-  trivyVersions: Count[]
-}

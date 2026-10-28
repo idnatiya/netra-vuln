@@ -43,6 +43,10 @@ type Store interface {
 	HostByID(ctx context.Context, id int64) (domain.Host, error)
 	// UpdateFindingTriage returns domain.ErrNotFound when no finding has that id.
 	UpdateFindingTriage(ctx context.Context, id int64, status domain.TriageStatus, note string) error
+	// UpdateComponentTriage triages every unresolved finding of one component on a host
+	// and returns how many it changed.
+	UpdateComponentTriage(ctx context.Context, hostID int64, kind domain.ComponentKind, component string,
+		status domain.TriageStatus, note string) (int, error)
 
 	CreateAdminUser(ctx context.Context, username, passwordHash string, now time.Time) error
 	AdminUserByUsername(ctx context.Context, username string) (domain.AdminUser, error)

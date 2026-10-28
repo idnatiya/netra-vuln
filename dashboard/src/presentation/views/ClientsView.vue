@@ -37,7 +37,7 @@ const editing = ref<Client | null>(null)
         <TableBody>
           <TableRow v-for="c in clients.data.value ?? []" :key="c.name">
             <TableCell>
-              <RouterLink :to="{ name: 'overview', query: { client: c.name } }" class="font-medium hover:underline">{{ c.name }}</RouterLink>
+              <RouterLink :to="{ name: 'hosts', query: { client: c.name } }" class="font-medium hover:underline">{{ c.name }}</RouterLink>
             </TableCell>
             <TableCell class="text-right tabular-nums">{{ c.hosts }}</TableCell>
             <TableCell class="text-right tabular-nums" :class="{ 'font-semibold text-sev-critical': c.openCritical > 0 }">{{ c.openCritical }}</TableCell>

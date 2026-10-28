@@ -4,10 +4,9 @@ ANSIBLE_DIR := deploy/ansible
 MYSQL_COMPOSE := docker compose -f deploy/dev/mysql.compose.yml
 TEST_MYSQL_DSN ?= root:test@tcp(127.0.0.1:3317)/
 CENTRAL_DSN ?= root:test@tcp(127.0.0.1:3317)/vuln
-# Local only by default, on an uncommon port (8080/8090 are often taken by other projects).
-# For the sample-VM loop over Tailscale:
-#   make dev CENTRAL_ADDR=100.77.238.106:18080
-CENTRAL_ADDR ?= 127.0.0.1:18080
+# The laptop's Tailscale IP when available (so tailnet VMs can report), else local only.
+# Uncommon port: 8080/8090 are often taken by other projects.
+CENTRAL_ADDR ?= $(or $(shell tailscale ip -4 2>/dev/null | head -1),127.0.0.1):18080
 DEV_ADMIN_USER ?= admin
 DEV_ADMIN_PASSWORD_FILE := dev-out/admin-password
 

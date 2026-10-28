@@ -70,7 +70,7 @@ Dependency rule: `domain` <- `usecase` <- `adapter` <- `cmd`. Domain knows nothi
 - `internal/scanconfig`: `Config`, `Default()`, `Validate()`; the agent's `domain.ScanConfig` is an alias. Central validates `client set-config` with the same rules.
 
 ### File locations
-- Agent binary: `/opt/vuln-agent/bin/vuln-agent`
+- Agent binary: `/opt/vuln-agent/bin/vuln-agent`, symlinked as `/usr/bin/vuln-agent` (so `sudo vuln-agent scan` works; run it after patching a VM to resolve fixed findings right away)
 - Trivy binary: `/opt/vuln-agent/bin/trivy`
 - Config: `/etc/vuln-agent/config.yaml` (mode 600, owner root)
 - Spool: `/var/lib/vuln-agent/spool/`
@@ -173,13 +173,13 @@ Code layout mirrors the agent: `central/cmd/central` + `central/internal/{domain
 
 ## Dashboard (admin web UI)
 Admin-only SPA; admins see every client (no per-client logins). Views:
-1. Overview: open CRITICAL/HIGH per client and host, stale hosts (no successful scan > 48h or no heartbeat > 1h), reboot required / auto-update off, 30-day trend (last successful scan per host per day, from `scans`), oldest open CVEs (by `first_seen`), OS / agent / Trivy distribution
-2. Findings: filter by client, host, severity, triage status, CVE/package search; paging; triage
-3. Hosts: health, issues, revoke
+1. Hosts (home): cards grouped by client, worst first (stale, then open critical/high); summary line (hosts with critical findings, not reporting, waiting for a reboot); search; show revoked
+2. Host detail (`/hosts/:id`): host facts (OS, running kernel, last scan/heartbeat, issues), open critical/high, effect of the last scan (findings resolved / new), the re-scan command, revoke; "What to fix" lists the host's components (tabs Open / Accepted / False positive). Each expands to a plain-language next step, a copy-ready fix command (`componentAdvice` in `src/domain/rules.ts`: apt/dnf upgrade, purge of a non-running fallback kernel vs upgrade + reboot of the running one, composer/npm/pip per app type, `dpkg -S`/`rpm -qf` for binaries), a bulk verdict for the whole component, and its CVEs with per-finding triage
+3. Search CVEs (`/findings`): flat list across hosts; filter by client, host, severity, triage status, CVE/package search; paging; triage
 4. Clients: create (enroll token shown once), per-client scan-config overrides
 
 Rules:
-- Components (`domain.Finding.Component`, stored at ingest and refreshed every scan) group findings into one upgrade action each: `os` = OS packages with the same installed version (one source package, e.g. all `linux-*` kernel pieces; shown as "Linux kernel" + reboot hint), `app` = language packages under one application folder (from Trivy's `PkgPath`, cut before `vendor/`, `node_modules/`, `site-packages/`, `.venv/`, `WEB-INF/`…; package caches like `.m2`/`.cache` group as the cache), `binary` = one Go/Rust binary. The Findings view defaults to the Components tab; "View" drills into that component's findings.
+- Components (`domain.Finding.Component`, stored at ingest and refreshed every scan) group findings into one upgrade action each: `os` = OS packages with the same installed version (one source package, e.g. all `linux-*` kernel pieces; shown as "Linux kernel" + reboot hint), `app` = language packages under one application folder (from Trivy's `PkgPath`, cut before `vendor/`, `node_modules/`, `site-packages/`, `.venv/`, `WEB-INF/`…; package caches like `.m2`/`.cache` group as the cache), `binary` = one Go/Rust binary. `POST /api/admin/v1/components/triage` applies one verdict to every unresolved finding of a component. Host rows carry `new_in_last_scan` / `resolved_in_last_scan` (findings whose `first_seen` / `resolved_at` equal the host's last successful `last_scan_at`) and `first_scan`.
 - "Open" = `resolved_at IS NULL AND status = 'open'`. Triage (`accepted` / `false_positive`) needs a note and survives re-scans; it never deletes data.
 - Auth: `admin_users` (bcrypt) + `admin_sessions` (SHA-256 token hash, 12h). Cookie `vuln_session`: HttpOnly, Secure, SameSite=Strict, Path=/api/admin. State-changing requests must send a same-origin `Origin` (CSRF). Login limited per client IP; behind Caddy set `CENTRAL_TRUST_PROXY=true`.
 - Admins are created with the CLI only: `central admin create|passwd|list` (no sign-up).
@@ -196,8 +196,8 @@ Rules:
   - Enroll only when no token (or `vuln_agent_force_enroll`), enroll token from Ansible Vault, `no_log`
   - Run `vuln-agent check`; enable timers once packaging provides the systemd units
   - Example inventory grouped per client with different SSH user/port/key per group and `ProxyJump`
-- Local dev: `make dev` runs MySQL (127.0.0.1:3317, tmpfs, `deploy/dev/mysql.compose.yml`) + central (127.0.0.1:18080) + the dashboard (http://localhost:5173) in one terminal; Ctrl+C stops all, and if either process dies the other is stopped too. It migrates and seeds admin `admin` once (password in `dev-out/admin-password`). `make help` lists targets; `make dev-down` drops the dev DB; admin CLI via `make central ARGS="..."`.
-- Sample VM loop over Tailscale: `make dev CENTRAL_ADDR=<laptop-tailnet-ip>:18080`, create the client in the dashboard, then `make scan-dev ARGS="-e @<enroll-vars.yml>"` (a mode-600 file with `vuln_agent_enroll_token`, never committed; add `-e vuln_agent_force_enroll=true` after the dev DB was reset).
+- Local dev: `make dev` runs MySQL (127.0.0.1:3317, tmpfs, `deploy/dev/mysql.compose.yml`) + central (port 18080: Tailscale IP if up, else 127.0.0.1) + the dashboard (http://localhost:5173) in one terminal; Ctrl+C stops all, and if either process dies the other is stopped too. It migrates and seeds admin `admin` once (password in `dev-out/admin-password`). `make help` lists targets; `make dev-down` drops the dev DB; admin CLI via `make central ARGS="..."`.
+- Sample VM loop over Tailscale: `make dev` listens on the laptop's Tailscale IP when `tailscale` is up (else `127.0.0.1:18080`; override with `CENTRAL_ADDR`), create the client in the dashboard, then `make scan-dev ARGS="-e @<enroll-vars.yml>"` (a mode-600 file with `vuln_agent_enroll_token`, never committed; add `-e vuln_agent_force_enroll=true` after the dev DB was reset).
 - Tests: `make test` (unit, MySQL tests skip), `make test-integration` (starts MySQL, sets `TEST_MYSQL_DSN`).
 - Manual install without Ansible: `.deb`/`.rpm` package or tarball + `install.sh`, fill in `config.yaml`, `vuln-agent enroll`, `vuln-agent check`.
 
