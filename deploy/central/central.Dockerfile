@@ -3,7 +3,6 @@ FROM golang:1.26.5-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
-COPY migrations ./migrations
 COPY central ./central
 ARG VERSION=dev
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/central ./central/cmd/central

@@ -1,7 +1,7 @@
 import type { Repositories } from '@/application/ports'
 import type { ComponentFilter, ScanConfig } from '@/domain/models'
 import {
-  type AdminSessionDTO, type ClientDTO, type ComponentDTO, type FindingDTO, type HostDTO, type PageDTO, type SessionDTO, type TrendDTO,
+  type AdminSessionDTO, type ClientDTO, type ComponentDTO, type FindingDTO, type HostDTO, type SessionDTO, type TrendDTO,
   toAdminSession, toClient, toComponent, toFinding, toHost, toSession, toTrend,
 } from './dto'
 import type { HttpClient } from './http'
@@ -32,10 +32,11 @@ export function createHttpRepositories(http: HttpClient): Repositories {
     },
     findings: {
       list: async (f) => {
-        const p = await http.get<PageDTO<FindingDTO>>('/findings', {
-          ...filterParams(f), sort: f.sort, page: f.page, page_size: f.pageSize,
-        })
-        return { items: p.items.map(toFinding), total: p.total, page: p.page, pageSize: p.page_size }
+        const r = await http.page<FindingDTO>('/findings', { ...filterParams(f), sort: f.sort, page: f.page, size: f.pageSize })
+        return {
+          items: r.data.map(toFinding), total: r.paging?.total_item ?? r.data.length,
+          page: r.paging?.page ?? f.page, pageSize: r.paging?.size ?? f.pageSize,
+        }
       },
       components: async (f) => (await http.get<ComponentDTO[]>('/components', filterParams(f))).map(toComponent),
       triage: (id, status, note) => http.request<void>('PATCH', `/findings/${id}`, { status, note }),

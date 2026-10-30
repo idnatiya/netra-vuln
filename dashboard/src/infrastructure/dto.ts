@@ -63,7 +63,6 @@ export const toComponent = (d: ComponentDTO): Component => ({
   firstSeen: date(d.first_seen),
 })
 
-export interface PageDTO<T> { items: T[], total: number, page: number, page_size: number }
 
 
 export interface TrendDTO { day: string, critical: number, high: number }

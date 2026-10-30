@@ -1,0 +1,9 @@
+{
+  "app": { "name": "central" },
+  "web": { "addr": "127.0.0.1:18080", "trust_proxy": false },
+  "log": { "level": 4 },
+  "database": {
+    "dsn": "root:test@tcp(127.0.0.1:3317)/vuln",
+    "pool": { "idle": 10, "max": 20, "lifetime": 300 }
+  }
+}

@@ -2,6 +2,7 @@
 import { CircleAlert, ShieldCheck } from '@lucide/vue'
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { UnauthorizedError } from '@/application/errors'
 import { session } from '@/presentation/composables/session'
 import { useUseCases } from '@/presentation/composables/useUseCases'
 import { errorMessage } from '@/presentation/lib/format'
@@ -24,7 +25,7 @@ async function submit() {
     const next = typeof route.query.next === 'string' && route.query.next.startsWith('/') ? route.query.next : '/'
     router.replace(next)
   } catch (e) {
-    error.value = errorMessage(e)
+    error.value = e instanceof UnauthorizedError ? 'wrong username or password' : errorMessage(e)
   } finally {
     busy.value = false
     password.value = ''

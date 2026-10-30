@@ -23,6 +23,7 @@ Work in phases (see "Phases"). At the end of each phase, stop and show the resul
 - Language: **Go** (latest stable)
 - Central HTTP: **Fiber v3** (fasthttp)
 - Database: **MySQL 8**
+- Central libraries (after [khannedy/golang-clean-architecture](https://github.com/khannedy/golang-clean-architecture)): GORM (mysql driver), Viper, Logrus (JSON), go-playground/validator, golang-migrate (embedded `iofs`), testify
 - Dashboard: **Vue 3 + Vite + TypeScript + Tailwind v4 + shadcn-vue** SPA in `/dashboard` (admin only), served by Caddy, talking to central's `/api/admin/v1`
 - Central deployment: **Docker Compose** (central API + MySQL + Caddy for TLS and the dashboard SPA + daily backup)
 - CI: **GitLab CI** (`.gitlab-ci.yml`)
@@ -30,12 +31,11 @@ Work in phases (see "Phases"). At the end of each phase, stop and show the resul
 ## Repo Layout
 Go module `netra-vuln` (requires `github.com/idnatiya/netra-vuln-agent` for the contract).
 ```
-/central      # central API Go code
+/central      # central API Go code (cmd, db/migrations, internal, test)
 /deploy
   /central    # docker-compose.yml, Dockerfiles, Caddyfile, backup.sh, .env.example
   /dev        # mysql.compose.yml for make dev / tests
 /dashboard    # admin SPA (Vue + shadcn-vue, clean architecture)
-/migrations   # SQL migrations
 /docs         # README, architecture, install guide
 .gitlab-ci.yml
 ```
@@ -62,11 +62,25 @@ Admin CLI (subcommands of the central binary, not public endpoints):
 - `central client set-config <name> <file.json|->` / `central client set-config -clear <name>` / `central client list`
 - `central host list [-client <name>]`
 - `central host revoke <hostname> [-client <name>]`
-- `central migrate`, `central serve` (env `CENTRAL_DSN`, `CENTRAL_ADDR`)
+- `central migrate`, `central serve` (env `CENTRAL_DSN`, `CENTRAL_ADDR`, `CENTRAL_TRUST_PROXY`, `CENTRAL_LOG_LEVEL`; or `config.json` in `./` or `./central`, env wins)
 
 Status codes matter to the agent: 400/413/422 = permanent reject (agent drops the report); 401/403/409/429/5xx = retried or spooled.
 
-Code layout mirrors the agent: `central/cmd/central` + `central/internal/{domain,usecase,adapter/{mysql,httpapi}}`; `httpapi` is the only package that imports Fiber. Read report bodies with `BodyRaw()` + explicit gunzip, not `c.Body()` (on decode errors it returns the error text as the body). A raw body over `BodyLimit` is cut off by fasthttp (connection reset), so the agent spools and retries it.
+Code layout follows khannedy/golang-clean-architecture under `central/`:
+```
+cmd/central/main.go      # CLI subcommands; serve = NewViper > NewLogger > NewDatabase > NewValidator > NewFiber > Bootstrap
+config.json              # dev defaults (env overrides)
+db/migrations/           # golang-migrate <timestamp>_<name>.{up,down}.sql, embedded
+internal/
+  entity/                # GORM table structs + pure rules (finding key, component, report normalize/validate, stale, overview)
+  model/ model/converter # admin request (validate tags) / response types, WebResponse; entity -> model
+  repository/            # Repository[T] + per-table repositories (GORM; complex reads via Raw)
+  usecase/               # one use case per resource; returns *fiber.Error, owns transactions
+  delivery/http/         # controllers; middleware/ (host auth, session, same-origin, rate limit, body); route/route.go
+  config/                # viper, logrus, gorm (DSN), validator, fiber (error handler), migrate, app.go (Bootstrap)
+test/                    # black-box tests through app.Test against MySQL
+```
+Admin API (`/api/admin/v1/*`) responses use `model.WebResponse{data, paging, errors}`; agent API (`/api/v1/*`) responses are `pkg/wire` types as-is and errors plain text. Read report bodies with `BodyRaw()` + explicit gunzip, not `c.Body()` (on decode errors it returns the error text as the body). A raw body over `BodyLimit` is cut off by fasthttp (connection reset), so the agent spools and retries it.
 
 ### Security
 - Tokens are stored hashed (e.g. SHA-256), not in plaintext
@@ -104,7 +118,7 @@ Rules:
 - "Open" = `resolved_at IS NULL AND status = 'open'`. Triage (`accepted` / `false_positive`) needs a note and survives re-scans; it never deletes data.
 - Auth: `admin_users` (bcrypt) + `admin_sessions` (SHA-256 token hash, 12h, plus login IP and User-Agent for the Account page). Cookie `vuln_session`: HttpOnly, Secure, SameSite=Strict, Path=/api/admin. State-changing requests must send a same-origin `Origin` (CSRF). Login limited per client IP; behind Caddy set `CENTRAL_TRUST_PROXY=true`.
 - Admins are created with the CLI only: `central admin create|passwd|list` (no sign-up).
-- Admin API JSON shapes live in `central/internal/adapter/httpapi/admin_dto.go` (not part of the agent contract in the agent module's `wire`).
+- Admin API JSON shapes live in `central/internal/model` (not part of the agent contract in the agent module's `wire`); the dashboard's `infrastructure/http.ts` unwraps `data` and reads `paging` / `errors`.
 - Dashboard structure: `src/domain` (types + pure rules) <- `src/application` (ports + use cases) <- `src/infrastructure` (fetch + DTO mapping) / `src/presentation` (views, vue-query composables, shadcn `components/ui`); `src/di.ts` is the composition root. Views never call `fetch`.
 - Production CSP is `default-src 'self'`: no remote fonts/scripts/styles (a vitest guard checks `style.css`).
 
@@ -112,15 +126,14 @@ Rules:
 - `deploy/central/docker-compose.yml`: `mysql` (named volume), `migrate` (one-shot `central migrate`), `central` (distroless, healthcheck `central healthcheck`), `caddy` (automatic HTTPS, serves the dashboard SPA, proxies `/api/*`; optional `ADMIN_ALLOW_CIDRS` for the dashboard), `backup` (daily `mysqldump` into `./backups`, `BACKUP_KEEP_DAYS`). Configure via `.env` (from `.env.example`); first admin: `docker compose exec central central admin create <name>`. `.dockerignore` keeps `dev-out/` and other local data out of the build context.
 - Local dev: `make dev` runs MySQL (127.0.0.1:3317, tmpfs, `deploy/dev/mysql.compose.yml`) + central (port 18080: Tailscale IP if up, else 127.0.0.1) + the dashboard (http://localhost:5173) in one terminal; Ctrl+C stops all, and if either process dies the other is stopped too. It migrates and seeds admin `admin` once (password in `dev-out/admin-password`). `make help` lists targets; `make dev-down` drops the dev DB; admin CLI via `make central ARGS="..."`.
 - Sample VM loop over Tailscale: `make dev` listens on the laptop's Tailscale IP when `tailscale` is up (else `127.0.0.1:18080`; override with `CENTRAL_ADDR`), create the client in the dashboard, then in the agent repo `make scan-dev ARGS="-e @<enroll-vars.yml>"` (a mode-600 file with `vuln_agent_enroll_token`, never committed; add `-e vuln_agent_force_enroll=true` after the dev DB was reset).
-- Tests: `make test` (unit, MySQL tests skip), `make test-integration` (starts MySQL, sets `TEST_MYSQL_DSN`).
+- Tests: `make test` (dashboard tests, starts the dev MySQL, `go vet`, Go tests with `TEST_MYSQL_DSN`; the suite recreates database `vuln_test`).
 
 ## CI
 - GitLab CI: lint, test, build; central image to the GitLab Container Registry (agent packaging and CI live in the agent repo)
 
 ## Testing
-- Unit tests for ingest logic (new finding, still present, resolved, reappeared, scan error)
-- Central integration tests with MySQL (testcontainers or compose)
-- Test that a client A token is rejected when sending for a client B host
+- All Go tests live in `central/test/` (package `test`, black-box, testify): requests go through the Fiber app (`app.Test`) into real MySQL; no fakes. `ClearAll` empties the tables per test; tests change timestamps in the DB instead of injecting a clock.
+- Cover ingest logic (new finding, still present, resolved, reappeared, scan error), agent status codes and contract (strict decode of responses), tenant isolation (client A token rejected for client B), admin auth/session/CSRF, dashboard queries, and the pure entity rules
 
 ## Documentation (`/docs`)
 - README: short architecture (text diagram), how to deploy central, how to enroll a new VM (link to the agent repo), how to revoke a host

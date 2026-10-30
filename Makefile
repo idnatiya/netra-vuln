@@ -8,7 +8,7 @@ DEV_ADMIN_USER ?= admin
 DEV_ADMIN_PASSWORD_FILE := dev-out/admin-password
 
 .DEFAULT_GOAL := help
-.PHONY: help dev dev-admin dev-down test test-integration mysql-up central central-dev \
+.PHONY: help dev dev-admin dev-down test mysql-up central central-dev \
 	dashboard-deps dashboard-dev dashboard-test compose-up compose-down
 
 help: ## Show this help
@@ -75,11 +75,8 @@ dashboard-test: dashboard-deps ## Dashboard unit tests + typecheck
 
 # --- Tests & builds ----------------------------------------------------------
 
-test: dashboard-test ## Unit tests (MySQL tests skip)
+test: dashboard-test mysql-up ## Dashboard tests + Go vet + Go tests (central/test against the dev MySQL)
 	go vet ./...
-	go test ./...
-
-test-integration: mysql-up ## All Go tests including MySQL integration tests
 	TEST_MYSQL_DSN='$(TEST_MYSQL_DSN)' go test -count=1 ./...
 
 # --- Production stack (deploy/central/.env must exist; see .env.example) -----

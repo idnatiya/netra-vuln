@@ -8,7 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -19,23 +18,24 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/idnatiya/netra-vuln-agent/pkg/wire"
+	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 	"golang.org/x/term"
 
-	"netra-vuln/central/internal/adapter/httpapi"
-	"netra-vuln/central/internal/adapter/mysql"
-	"netra-vuln/central/internal/usecase"
-	"github.com/idnatiya/netra-vuln-agent/pkg/wire"
-	"netra-vuln/migrations"
+	"netra-vuln/central/internal/config"
+	"netra-vuln/central/internal/model"
 )
 
 var version = "dev" // -ldflags "-X main.version=..."
 
 const usage = `usage: central <command>
 
-environment:
+environment (or config.json in ./ or ./central):
   CENTRAL_DSN          MySQL DSN, e.g. user:pass@tcp(mysql:3306)/vuln   (required)
   CENTRAL_ADDR         listen address for serve (default :8080)
   CENTRAL_TRUST_PROXY  "true" behind Caddy: client IP from X-Forwarded-For (private-network proxies)
+  CENTRAL_LOG_LEVEL    logrus level 0-6 (default 4 = info)
 
 commands:
   serve                                    run the API server
@@ -53,21 +53,26 @@ commands:
   version
 `
 
+var errUsage = errors.New("usage")
+
 func main() {
-	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
-	if err := run(os.Args[1:], log); err != nil {
+	viperConfig := config.NewViper()
+	log := config.NewLogger(viperConfig)
+	if err := run(os.Args[1:], viperConfig, log); err != nil {
 		if errors.Is(err, errUsage) {
 			fmt.Fprint(os.Stderr, usage)
 			os.Exit(2)
 		}
-		log.Error("failed", "err", err)
+		var fe *fiber.Error
+		if errors.As(err, &fe) {
+			err = errors.New(fe.Message)
+		}
+		log.WithError(err).Error("failed")
 		os.Exit(1)
 	}
 }
 
-var errUsage = errors.New("usage")
-
-func run(args []string, log *slog.Logger) error {
+func run(args []string, viperConfig *viper.Viper, log *logrus.Logger) error {
 	if len(args) == 0 {
 		return errUsage
 	}
@@ -75,63 +80,39 @@ func run(args []string, log *slog.Logger) error {
 	case "version":
 		fmt.Println(version)
 		return nil
-	case "healthcheck": // no DSN needed; used by the Docker healthcheck
-		return healthcheck()
+	case "healthcheck": // no database needed; used by the Docker healthcheck
+		return healthcheck(viperConfig.GetString("web.addr"))
+	case "migrate":
+		return config.Migrate(viperConfig, log)
 	}
-	dsn := os.Getenv("CENTRAL_DSN")
-	if dsn == "" {
-		return errors.New("CENTRAL_DSN is not set")
-	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	db := config.NewDatabase(viperConfig, log)
+	validate := config.NewValidator(viperConfig)
 
-	if args[0] == "migrate" {
-		db, err := mysql.Open(dsn, true)
-		if err != nil {
-			return err
-		}
-		defer db.Close()
-		return mysql.Migrate(ctx, db, migrations.FS, log)
+	if args[0] == "serve" {
+		app := config.NewFiber(viperConfig, log)
+		config.Bootstrap(&config.BootstrapConfig{DB: db, App: app, Log: log, Validate: validate, Config: viperConfig})
+		return serve(ctx, app, viperConfig.GetString("web.addr"), log)
 	}
 
-	db, err := mysql.Open(dsn, false)
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-	store := mysql.New(db)
-	admin := &usecase.Admin{Store: store, Now: time.Now}
-
+	uc := config.Bootstrap(&config.BootstrapConfig{DB: db, Log: log, Validate: validate, Config: viperConfig})
 	switch cmd := args[0]; {
-	case cmd == "serve":
-		return serve(ctx, store, log)
 	case cmd == "client" && len(args) > 1:
-		return clientCmd(ctx, admin, args[1], args[2:])
+		return clientCmd(ctx, uc, args[1], args[2:])
 	case cmd == "host" && len(args) > 1:
-		return hostCmd(ctx, admin, args[1], args[2:])
+		return hostCmd(ctx, uc, args[1], args[2:])
 	case cmd == "admin" && len(args) > 1:
-		return adminCmd(ctx, &usecase.AdminAuth{Store: store, Now: time.Now}, args[1], args[2:])
+		return adminCmd(ctx, uc, args[1], args[2:])
 	}
 	return errUsage
 }
 
-func serve(ctx context.Context, store *mysql.Store, log *slog.Logger) error {
-	addr := os.Getenv("CENTRAL_ADDR")
-	if addr == "" {
-		addr = ":8080"
-	}
-	srv := httpapi.New(
-		&usecase.Agent{Store: store, Now: time.Now},
-		&usecase.Enroll{Store: store, Now: time.Now},
-		log, httpapi.Options{Limits: httpapi.DefaultLimits(), TrustProxy: os.Getenv("CENTRAL_TRUST_PROXY") == "true"})
-	srv.MountAdmin(
-		&usecase.AdminAuth{Store: store, Now: time.Now},
-		&usecase.Dashboard{Queries: store, Store: store, Admin: &usecase.Admin{Store: store, Now: time.Now}, Now: time.Now})
-	app := srv.App()
-
+func serve(ctx context.Context, app *fiber.App, addr string, log *logrus.Logger) error {
 	errc := make(chan error, 1)
 	go func() { errc <- app.Listen(addr, fiber.ListenConfig{DisableStartupMessage: true}) }()
-	log.Info("central listening", "addr", addr, "version", version)
+	log.WithFields(logrus.Fields{"addr": addr, "version": version}).Info("central listening")
 	select {
 	case err := <-errc:
 		return err
@@ -143,7 +124,7 @@ func serve(ctx context.Context, store *mysql.Store, log *slog.Logger) error {
 	return app.ShutdownWithContext(shutdownCtx)
 }
 
-func clientCmd(ctx context.Context, admin *usecase.Admin, sub string, args []string) error {
+func clientCmd(ctx context.Context, uc *config.UseCases, sub string, args []string) error {
 	fs := flag.NewFlagSet("client "+sub, flag.ContinueOnError)
 	clear := fs.Bool("clear", false, "set-config: remove overrides")
 	pos, err := parseInterspersed(fs, args)
@@ -152,22 +133,22 @@ func clientCmd(ctx context.Context, admin *usecase.Admin, sub string, args []str
 	}
 	switch {
 	case sub == "create" && len(pos) == 1:
-		token, err := admin.CreateClient(ctx, pos[0])
+		res, err := uc.Client.Create(ctx, &model.CreateClientRequest{Name: pos[0]})
 		if err != nil {
 			return err
 		}
-		fmt.Printf("client %q created.\nenroll token (shown once, store it in Ansible Vault):\n%s\n", pos[0], token)
+		fmt.Printf("client %q created.\nenroll token (shown once):\n%s\n", res.Name, res.EnrollToken)
 		return nil
 	case sub == "set-config" && *clear && len(pos) == 1:
-		return admin.SetScanConfig(ctx, pos[0], nil)
+		return uc.Client.SetScanConfig(ctx, &model.SetScanConfigRequest{Name: pos[0]})
 	case sub == "set-config" && len(pos) == 2:
 		cfg, err := readScanConfig(pos[1])
 		if err != nil {
 			return err
 		}
-		return admin.SetScanConfig(ctx, pos[0], cfg)
+		return uc.Client.SetScanConfig(ctx, &model.SetScanConfigRequest{Name: pos[0], Config: cfg})
 	case sub == "list" && len(pos) == 0:
-		clients, err := admin.ListClients(ctx)
+		clients, err := uc.Client.List(ctx)
 		if err != nil {
 			return err
 		}
@@ -175,7 +156,7 @@ func clientCmd(ctx context.Context, admin *usecase.Admin, sub string, args []str
 		fmt.Fprintln(tw, "NAME\tSCAN_CONFIG\tCREATED")
 		for _, c := range clients {
 			cfg := "default"
-			if c.ScanConfig != nil {
+			if string(c.ScanConfig) != "null" {
 				cfg = string(c.ScanConfig)
 			}
 			fmt.Fprintf(tw, "%s\t%s\t%s\n", c.Name, cfg, c.CreatedAt.Format(time.RFC3339))
@@ -200,7 +181,7 @@ func readScanConfig(path string) ([]byte, error) {
 	return wire.ParseScanConfig(b)
 }
 
-func hostCmd(ctx context.Context, admin *usecase.Admin, sub string, args []string) error {
+func hostCmd(ctx context.Context, uc *config.UseCases, sub string, args []string) error {
 	fs := flag.NewFlagSet("host "+sub, flag.ContinueOnError)
 	client := fs.String("client", "", "client name")
 	pos, err := parseInterspersed(fs, args)
@@ -209,25 +190,62 @@ func hostCmd(ctx context.Context, admin *usecase.Admin, sub string, args []strin
 	}
 	switch {
 	case sub == "list" && len(pos) == 0:
-		hosts, err := admin.ListHosts(ctx, *client)
+		hosts, err := uc.Host.FindAll(ctx, &model.SearchHostRequest{Client: *client})
 		if err != nil {
 			return err
 		}
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 		fmt.Fprintln(tw, "CLIENT\tHOSTNAME\tOS\tAGENT\tTRIVY\tLAST_HEARTBEAT\tLAST_SCAN\tSTATUS\tREVOKED")
 		for _, h := range hosts {
-			fmt.Fprintf(tw, "%s\t%s\t%s %s\t%s\t%s\t%s\t%s\t%s\t%s\n", h.ClientName, h.Hostname,
+			fmt.Fprintf(tw, "%s\t%s\t%s %s\t%s\t%s\t%s\t%s\t%s\t%s\n", h.Client.Name, h.Hostname,
 				h.Meta.OSName, h.Meta.OSVersion, h.Meta.AgentVersion, h.TrivyVersion,
 				ts(h.LastHeartbeatAt), ts(h.LastScanAt), dash(string(h.LastScanStatus)), ts(h.RevokedAt))
 		}
 		return tw.Flush()
 	case sub == "revoke" && len(pos) == 1:
-		h, err := admin.RevokeHost(ctx, pos[0], *client)
+		h, err := uc.Host.RevokeByName(ctx, &model.RevokeHostByNameRequest{Hostname: pos[0], Client: *client})
 		if err != nil {
 			return err
 		}
-		fmt.Printf("revoked %s/%s; the agent must re-enroll to report again\n", h.ClientName, h.Hostname)
+		fmt.Printf("revoked %s/%s; the agent must re-enroll to report again\n", h.Client.Name, h.Hostname)
 		return nil
+	}
+	return errUsage
+}
+
+func adminCmd(ctx context.Context, uc *config.UseCases, sub string, args []string) error {
+	switch {
+	case sub == "create" && len(args) == 1:
+		pw, err := readPassword()
+		if err != nil {
+			return err
+		}
+		if err := uc.AdminUser.Create(ctx, &model.CreateAdminRequest{Username: args[0], Password: pw}); err != nil {
+			return err
+		}
+		fmt.Printf("admin %q created\n", args[0])
+		return nil
+	case sub == "passwd" && len(args) == 1:
+		pw, err := readPassword()
+		if err != nil {
+			return err
+		}
+		if err := uc.AdminUser.SetPassword(ctx, &model.CreateAdminRequest{Username: args[0], Password: pw}); err != nil {
+			return err
+		}
+		fmt.Printf("password for %q updated\n", args[0])
+		return nil
+	case sub == "list" && len(args) == 0:
+		users, err := uc.AdminUser.List(ctx)
+		if err != nil {
+			return err
+		}
+		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+		fmt.Fprintln(tw, "USERNAME\tCREATED\tDISABLED")
+		for _, u := range users {
+			fmt.Fprintf(tw, "%s\t%s\t%s\n", u.Username, u.CreatedAt.Format(time.RFC3339), ts(u.DisabledAt))
+		}
+		return tw.Flush()
 	}
 	return errUsage
 }
@@ -262,43 +280,6 @@ func dash(s string) string {
 	return s
 }
 
-func adminCmd(ctx context.Context, auth *usecase.AdminAuth, sub string, args []string) error {
-	switch {
-	case sub == "create" && len(args) == 1:
-		pw, err := readPassword()
-		if err != nil {
-			return err
-		}
-		if err := auth.CreateAdmin(ctx, args[0], pw); err != nil {
-			return err
-		}
-		fmt.Printf("admin %q created\n", args[0])
-		return nil
-	case sub == "passwd" && len(args) == 1:
-		pw, err := readPassword()
-		if err != nil {
-			return err
-		}
-		if err := auth.SetPassword(ctx, args[0], pw); err != nil {
-			return err
-		}
-		fmt.Printf("password for %q updated\n", args[0])
-		return nil
-	case sub == "list" && len(args) == 0:
-		users, err := auth.ListAdmins(ctx)
-		if err != nil {
-			return err
-		}
-		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "USERNAME\tCREATED\tDISABLED")
-		for _, u := range users {
-			fmt.Fprintf(tw, "%s\t%s\t%s\n", u.Username, u.CreatedAt.Format(time.RFC3339), ts(u.DisabledAt))
-		}
-		return tw.Flush()
-	}
-	return errUsage
-}
-
 // readPassword prompts without echo on a terminal, or reads one line from a
 // pipe (e.g. `docker compose exec -T central central admin create x < pw.txt`).
 func readPassword() (string, error) {
@@ -317,11 +298,7 @@ func readPassword() (string, error) {
 }
 
 // healthcheck asks the local server for /healthz (the image has no curl).
-func healthcheck() error {
-	addr := os.Getenv("CENTRAL_ADDR")
-	if addr == "" {
-		addr = ":8080"
-	}
+func healthcheck(addr string) error {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
 		return err
