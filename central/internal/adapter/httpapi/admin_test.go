@@ -18,7 +18,7 @@ import (
 
 type fakeAuth struct{}
 
-func (fakeAuth) Login(_ context.Context, u, p string) (string, domain.Session, error) {
+func (fakeAuth) Login(_ context.Context, u, p string, _ domain.SessionMeta) (string, domain.Session, error) {
 	if u != "ops" || p != "correct horse battery" {
 		return "", domain.Session{}, domain.ErrUnauthorized
 	}
@@ -28,9 +28,25 @@ func (fakeAuth) Session(_ context.Context, tok string) (domain.Session, error) {
 	if tok != "sess-token" {
 		return domain.Session{}, domain.ErrUnauthorized
 	}
-	return domain.Session{Username: "ops"}, nil
+	return domain.Session{ID: 1, Username: "ops"}, nil
 }
 func (fakeAuth) Logout(context.Context, string) error { return nil }
+func (fakeAuth) ChangePassword(_ context.Context, _ domain.Session, cur, next string) (int, error) {
+	if cur != "correct horse battery" {
+		return 0, domain.ErrInvalid
+	}
+	return 2, nil
+}
+func (fakeAuth) ListSessions(_ context.Context, s domain.Session) ([]domain.Session, error) {
+	return []domain.Session{{ID: 1, IP: "100.64.0.7", Current: true}, {ID: 2}}, nil
+}
+func (fakeAuth) RevokeSession(_ context.Context, s domain.Session, id int64) error {
+	if id == s.ID {
+		return domain.ErrConflict
+	}
+	return nil
+}
+func (fakeAuth) RevokeOtherSessions(context.Context, domain.Session) (int, error) { return 1, nil }
 
 type fakeDash struct {
 	Dashboard // unimplemented methods panic, flagging unexpected calls
@@ -140,6 +156,35 @@ func TestAdminRejectsCrossOrigin(t *testing.T) {
 	}
 	if d.triaged != domain.TriageAccepted {
 		t.Fatalf("triaged = %q", d.triaged)
+	}
+}
+
+func TestAccountRoutes(t *testing.T) {
+	app, _ := newAdminServer(t, DefaultLimits())
+	cases := []struct {
+		method, path, body string
+		want               int
+	}{
+		{"POST", "/me/password", `{"current_password":"correct horse battery","new_password":"brand new passphrase"}`, 200},
+		{"POST", "/me/password", `{"current_password":"nope","new_password":"brand new passphrase"}`, 400},
+		{"GET", "/me/sessions", "", 200},
+		{"DELETE", "/me/sessions/2", "", 204},
+		{"DELETE", "/me/sessions/1", "", 409},
+		{"DELETE", "/me/sessions/x", "", 400},
+		{"DELETE", "/me/sessions", "", 200},
+	}
+	for _, c := range cases {
+		if got := send(t, app, adminReq(c.method, c.path, c.body, "sess-token")).StatusCode; got != c.want {
+			t.Errorf("%s %s: %d, want %d", c.method, c.path, got, c.want)
+		}
+		if got := send(t, app, adminReq(c.method, c.path, c.body, "")).StatusCode; got != 401 {
+			t.Errorf("%s %s without cookie: %d", c.method, c.path, got)
+		}
+	}
+	resp := send(t, app, adminReq("GET", "/me/sessions", "", "sess-token"))
+	var list []sessionDTO
+	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil || len(list) != 2 || !list[0].Current || list[0].IP != "100.64.0.7" {
+		t.Fatalf("sessions = %+v %v", list, err)
 	}
 }
 

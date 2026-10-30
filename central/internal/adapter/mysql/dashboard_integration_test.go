@@ -145,12 +145,26 @@ func TestAdminSessionsInDB(t *testing.T) {
 	if err := auth.CreateAdmin(ctx, "ops", "correct horse battery"); !errors.Is(err, domain.ErrConflict) {
 		t.Fatalf("duplicate admin: %v", err)
 	}
-	tok, _, err := auth.Login(ctx, "ops", "correct horse battery")
+	tok, _, err := auth.Login(ctx, "ops", "correct horse battery", domain.SessionMeta{IP: "100.64.0.7", UserAgent: "curl/8"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s, err := auth.Session(ctx, tok); err != nil || s.Username != "ops" {
+	s, err := auth.Session(ctx, tok)
+	if err != nil || s.Username != "ops" || s.IP != "100.64.0.7" || s.UserAgent != "curl/8" || s.ID == 0 {
 		t.Fatalf("session: %+v %v", s, err)
+	}
+	tok2, _, _ := auth.Login(ctx, "ops", "correct horse battery", domain.SessionMeta{})
+	if list, err := auth.ListSessions(ctx, s); err != nil || len(list) != 2 || !list[1].Current {
+		t.Fatalf("list (newest first, current last): %+v %v", list, err)
+	}
+	if n, err := auth.ChangePassword(ctx, s, "correct horse battery", "brand new passphrase"); err != nil || n != 1 {
+		t.Fatalf("change password: %d %v", n, err)
+	}
+	if _, err := auth.Session(ctx, tok2); !errors.Is(err, domain.ErrUnauthorized) {
+		t.Fatalf("other session after password change: %v", err)
+	}
+	if err := auth.RevokeSession(ctx, s, 999999); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("revoke unknown: %v", err)
 	}
 	if n := e.count(t, `SELECT COUNT(*) FROM admin_sessions WHERE token_hash = ?`, []byte(tok)); n != 0 {
 		t.Fatal("session token stored in plaintext")
@@ -160,7 +174,7 @@ func TestAdminSessionsInDB(t *testing.T) {
 		t.Fatalf("expired: %v", err)
 	}
 	e.db.Exec(`UPDATE admin_users SET disabled_at = ? WHERE username = 'ops'`, e.now)
-	if _, _, err := auth.Login(ctx, "ops", "correct horse battery"); !errors.Is(err, domain.ErrUnauthorized) {
+	if _, _, err := auth.Login(ctx, "ops", "brand new passphrase", domain.SessionMeta{}); !errors.Is(err, domain.ErrUnauthorized) {
 		t.Fatalf("disabled login: %v", err)
 	}
 }

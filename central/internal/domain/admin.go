@@ -19,9 +19,21 @@ func (u AdminUser) Active() bool { return u.DisabledAt == nil }
 
 // Session is a logged-in dashboard session.
 type Session struct {
+	ID        int64
 	UserID    int64
 	Username  string
+	CreatedAt time.Time
 	ExpiresAt time.Time
+	IP        string
+	UserAgent string
+	// Current marks the caller's own session in a session list.
+	Current bool
+}
+
+// SessionMeta is recorded at login so admins can recognise their sessions.
+type SessionMeta struct {
+	IP        string
+	UserAgent string
 }
 
 var username = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{2,63}$`)

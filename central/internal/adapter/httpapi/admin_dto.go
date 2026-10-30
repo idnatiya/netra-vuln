@@ -15,6 +15,24 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
+type changePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
+type countResponse struct {
+	Count int `json:"count"`
+}
+
+type sessionDTO struct {
+	ID        int64     `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	ExpiresAt time.Time `json:"expires_at"`
+	IP        string    `json:"ip"`
+	UserAgent string    `json:"user_agent"`
+	Current   bool      `json:"current"`
+}
+
 type meResponse struct {
 	Username  string    `json:"username"`
 	ExpiresAt time.Time `json:"expires_at"`

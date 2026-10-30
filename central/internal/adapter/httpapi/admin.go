@@ -21,9 +21,13 @@ const (
 
 // AdminAuth is what the admin routes need from usecase.AdminAuth.
 type AdminAuth interface {
-	Login(ctx context.Context, username, password string) (string, domain.Session, error)
+	Login(ctx context.Context, username, password string, meta domain.SessionMeta) (string, domain.Session, error)
 	Session(ctx context.Context, token string) (domain.Session, error)
 	Logout(ctx context.Context, token string) error
+	ChangePassword(ctx context.Context, sess domain.Session, current, next string) (int, error)
+	ListSessions(ctx context.Context, sess domain.Session) ([]domain.Session, error)
+	RevokeSession(ctx context.Context, sess domain.Session, id int64) error
+	RevokeOtherSessions(ctx context.Context, sess domain.Session) (int, error)
 }
 
 // Dashboard is what the admin routes need from usecase.Dashboard.
@@ -55,6 +59,11 @@ func (s *Server) MountAdmin(auth AdminAuth, dash Dashboard) {
 	g.Post("/login", login, a.login)
 	g.Post("/logout", a.logout)
 	g.Get("/me", need, a.me)
+	password := rateLimit(s.limits.LoginMax, time.Minute, func(c fiber.Ctx) string { return "password:" + c.IP() })
+	g.Post("/me/password", need, password, a.changePassword)
+	g.Get("/me/sessions", need, a.sessions)
+	g.Delete("/me/sessions", need, a.revokeOtherSessions)
+	g.Delete("/me/sessions/:id", need, a.revokeSession)
 	g.Get("/overview", need, a.overview)
 	g.Get("/clients", need, a.clients)
 	g.Post("/clients", need, a.createClient)
@@ -120,7 +129,8 @@ func (a *adminRoutes) login(c fiber.Ctx) error {
 	if err := decodeJSON(body, &req); err != nil {
 		return err
 	}
-	token, sess, err := a.auth.Login(c.Context(), req.Username, req.Password)
+	meta := domain.SessionMeta{IP: c.IP(), UserAgent: c.Get(fiber.HeaderUserAgent)}
+	token, sess, err := a.auth.Login(c.Context(), req.Username, req.Password, meta)
 	if err != nil {
 		a.s.log.Warn("admin login failed", "username", req.Username, "remote", c.IP())
 		return err
@@ -141,6 +151,53 @@ func (a *adminRoutes) logout(c fiber.Ctx) error {
 func (a *adminRoutes) me(c fiber.Ctx) error {
 	sess := fiber.Locals[domain.Session](c, sessionKey)
 	return c.JSON(meResponse{Username: sess.Username, ExpiresAt: sess.ExpiresAt})
+}
+
+func (a *adminRoutes) changePassword(c fiber.Ctx) error {
+	body, err := smallBody(c)
+	if err != nil {
+		return err
+	}
+	var req changePasswordRequest
+	if err := decodeJSON(body, &req); err != nil {
+		return err
+	}
+	sess := fiber.Locals[domain.Session](c, sessionKey)
+	n, err := a.auth.ChangePassword(c.Context(), sess, req.CurrentPassword, req.NewPassword)
+	if err != nil {
+		return err
+	}
+	a.s.log.Info("admin password changed", "username", sess.Username, "remote", c.IP(), "signed_out_sessions", n)
+	return c.JSON(countResponse{Count: n})
+}
+
+func (a *adminRoutes) sessions(c fiber.Ctx) error {
+	list, err := a.auth.ListSessions(c.Context(), fiber.Locals[domain.Session](c, sessionKey))
+	if err != nil {
+		return err
+	}
+	return c.JSON(mapSlice(list, func(s domain.Session) sessionDTO {
+		return sessionDTO{ID: s.ID, CreatedAt: s.CreatedAt, ExpiresAt: s.ExpiresAt, IP: s.IP, UserAgent: s.UserAgent, Current: s.Current}
+	}))
+}
+
+func (a *adminRoutes) revokeSession(c fiber.Ctx) error {
+	id, err := idParam(c)
+	if err != nil {
+		return err
+	}
+	if err := a.auth.RevokeSession(c.Context(), fiber.Locals[domain.Session](c, sessionKey), id); err != nil {
+		return err
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func (a *adminRoutes) revokeOtherSessions(c fiber.Ctx) error {
+	n, err := a.auth.RevokeOtherSessions(c.Context(), fiber.Locals[domain.Session](c, sessionKey))
+	if err != nil {
+		return err
+	}
+	return c.JSON(countResponse{Count: n})
 }
 
 func (a *adminRoutes) overview(c fiber.Ctx) error {

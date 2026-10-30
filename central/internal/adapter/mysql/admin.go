@@ -89,20 +89,59 @@ func (s *Store) SetAdminPassword(ctx context.Context, username, passwordHash str
 	return err
 }
 
-func (s *Store) InsertSession(ctx context.Context, userID int64, tokenHash []byte, now, expires time.Time) error {
+func (s *Store) InsertSession(ctx context.Context, userID int64, tokenHash []byte, meta domain.SessionMeta, now, expires time.Time) error {
 	_, err := s.q.ExecContext(ctx,
-		`INSERT INTO admin_sessions (user_id, token_hash, created_at, expires_at) VALUES (?, ?, ?, ?)`,
-		userID, tokenHash, now, expires)
+		`INSERT INTO admin_sessions (user_id, token_hash, ip, user_agent, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		userID, tokenHash, meta.IP, meta.UserAgent, now, expires)
 	return mapErr(err)
 }
 
 func (s *Store) SessionByTokenHash(ctx context.Context, tokenHash []byte, now time.Time) (domain.Session, error) {
 	var sess domain.Session
-	err := s.q.QueryRowContext(ctx, `SELECT u.id, u.username, s.expires_at
+	err := s.q.QueryRowContext(ctx, `SELECT s.id, u.id, u.username, s.created_at, s.expires_at, s.ip, s.user_agent
 		FROM admin_sessions s JOIN admin_users u ON u.id = s.user_id
 		WHERE s.token_hash = ? AND s.expires_at > ? AND u.disabled_at IS NULL`, tokenHash, now,
-	).Scan(&sess.UserID, &sess.Username, &sess.ExpiresAt)
+	).Scan(&sess.ID, &sess.UserID, &sess.Username, &sess.CreatedAt, &sess.ExpiresAt, &sess.IP, &sess.UserAgent)
 	return sess, mapErr(err)
+}
+
+func (s *Store) ListSessions(ctx context.Context, userID int64, now time.Time) ([]domain.Session, error) {
+	rows, err := s.q.QueryContext(ctx, `SELECT s.id, u.id, u.username, s.created_at, s.expires_at, s.ip, s.user_agent
+		FROM admin_sessions s JOIN admin_users u ON u.id = s.user_id
+		WHERE s.user_id = ? AND s.expires_at > ? ORDER BY s.created_at DESC, s.id DESC`, userID, now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.Session
+	for rows.Next() {
+		var x domain.Session
+		if err := rows.Scan(&x.ID, &x.UserID, &x.Username, &x.CreatedAt, &x.ExpiresAt, &x.IP, &x.UserAgent); err != nil {
+			return nil, err
+		}
+		out = append(out, x)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) DeleteSessionByID(ctx context.Context, userID, id int64) error {
+	res, err := s.q.ExecContext(ctx, `DELETE FROM admin_sessions WHERE id = ? AND user_id = ?`, id, userID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+func (s *Store) DeleteOtherSessions(ctx context.Context, userID, keepID int64) (int, error) {
+	res, err := s.q.ExecContext(ctx, `DELETE FROM admin_sessions WHERE user_id = ? AND id <> ?`, userID, keepID)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	return int(n), err
 }
 
 func (s *Store) DeleteSession(ctx context.Context, tokenHash []byte) error {

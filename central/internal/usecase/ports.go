@@ -52,10 +52,16 @@ type Store interface {
 	AdminUserByUsername(ctx context.Context, username string) (domain.AdminUser, error)
 	ListAdminUsers(ctx context.Context) ([]domain.AdminUser, error)
 	SetAdminPassword(ctx context.Context, username, passwordHash string) error
-	InsertSession(ctx context.Context, userID int64, tokenHash []byte, now, expires time.Time) error
+	InsertSession(ctx context.Context, userID int64, tokenHash []byte, meta domain.SessionMeta, now, expires time.Time) error
 	// SessionByTokenHash returns only unexpired sessions of active admins.
 	SessionByTokenHash(ctx context.Context, tokenHash []byte, now time.Time) (domain.Session, error)
+	// ListSessions returns the user's unexpired sessions, newest first.
+	ListSessions(ctx context.Context, userID int64, now time.Time) ([]domain.Session, error)
 	DeleteSession(ctx context.Context, tokenHash []byte) error
+	// DeleteSessionByID returns domain.ErrNotFound when the user has no session with that id.
+	DeleteSessionByID(ctx context.Context, userID, id int64) error
+	// DeleteOtherSessions removes every session of the user except keepID and returns how many.
+	DeleteOtherSessions(ctx context.Context, userID, keepID int64) (int, error)
 	DeleteExpiredSessions(ctx context.Context, now time.Time) error
 }
 
