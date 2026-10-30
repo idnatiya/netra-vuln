@@ -7,8 +7,8 @@ Everything in this repo is written in **English**: code, identifiers, comments, 
 I manage 26 Linux VMs belonging to several different clients, spread across various hosting providers. Distros are mixed: Ubuntu/Debian and the RHEL family (AlmaLinux/Rocky/CentOS). I need a centralized system to monitor package vulnerabilities across all of these VMs.
 
 Build the system using an **agent + central** model:
-- **Agent**: a small non-AI program (daemon) installed on each VM. Its only job is to run Trivy, slim down the results, and send them to central.
-- **Central**: receiving API + MySQL + an admin web dashboard.
+- **Agent** (separate repo, see "Agent"): a small non-AI program installed on each VM. It runs Trivy, slims down the results, and sends them to central (it can also run standalone without central).
+- **Central** (this repo): receiving API + MySQL + an admin web dashboard.
 
 Work in phases (see "Phases"). At the end of each phase, stop and show the results before continuing. If a design decision is ambiguous, ask first.
 
@@ -20,113 +20,33 @@ Work in phases (see "Phases"). At the end of each phase, stop and show the resul
 5. **Simple and maintainable**: avoid unnecessary dependencies. Keep scope small.
 
 ## Stack
-- Language: **Go** (latest stable) for agent and central
-- Central HTTP: **Fiber v3** (fasthttp); agent uses stdlib `net/http` client
-- Agent: static binary (`CGO_ENABLED=0`), targets `linux/amd64` and `linux/arm64`
-- Scanner: **Trivy binary** invoked via `os/exec` (DO NOT import Trivy as a library). Trivy version is pinned in the build config.
+- Language: **Go** (latest stable)
+- Central HTTP: **Fiber v3** (fasthttp)
 - Database: **MySQL 8**
 - Dashboard: **Vue 3 + Vite + TypeScript + Tailwind v4 + shadcn-vue** SPA in `/dashboard` (admin only), served by Caddy, talking to central's `/api/admin/v1`
-- Agent packaging: **nfpm** or **GoReleaser** producing `.deb` and `.rpm`, plus a `.tar.gz` tarball + `install.sh`
 - Central deployment: **Docker Compose** (central API + MySQL + Caddy for TLS and the dashboard SPA + daily backup)
-- Agent deployment: **Ansible role** (`deploy/ansible/roles/vuln_agent`)
 - CI: **GitLab CI** (`.gitlab-ci.yml`)
 
-## Repo Layout (monorepo)
+## Repo Layout
+Go module `netra-vuln` (requires `github.com/idnatiya/netra-vuln-agent` for the contract).
 ```
-/agent        # agent Go code
 /central      # central API Go code
 /deploy
   /central    # docker-compose.yml, Dockerfiles, Caddyfile, backup.sh, .env.example
-  /ansible    # role "vuln_agent", dev inventory, example per-client inventory
-  /dev        # fakecentral: dev stand-in for central (logs + saves agent payloads)
-/packaging    # nfpm config, systemd units, postinstall/preremove scripts, config.example.yaml
+  /dev        # mysql.compose.yml for make dev / tests
 /dashboard    # admin SPA (Vue + shadcn-vue, clean architecture)
 /migrations   # SQL migrations
 /docs         # README, architecture, install guide
 .gitlab-ci.yml
 ```
 
-## Agent Specification
+## Agent (separate repo)
+The agent lives in its own repo/module: `github.com/idnatiya/netra-vuln-agent` (local checkout `../netra-vuln-agent`; its `CLAUDE.md` is the agent spec). It runs standalone (reports kept on the VM) or, with `central_url` set, pushes to this central.
 
-### Code structure (clean architecture)
-Single Go module at the repo root (`go.mod`, module `netra-vuln`). The agent's only external dependency is `gopkg.in/yaml.v3`.
-```
-agent/
-  cmd/vuln-agent/       # composition root: parse subcommand, wire adapters -> usecases
-  internal/
-    domain/             # entities + pure business rules (Finding, Report, HostInfo, ScanConfig), stdlib only
-    usecase/            # scan/heartbeat/flush/enroll/check orchestration; ports (interfaces) defined in ports.go
-    adapter/
-      trivy/            # Scanner: exec Trivy + streaming parser
-      hostinfo/         # Linux HostInspector
-      central/          # HTTP client to central; dto.go maps domain <-> internal/wire
-      spool/            # filesystem spool
-      localconfig/      # config.yaml + ScanConfig cache
-```
-Dependency rule: `domain` <- `usecase` <- `adapter` <- `cmd`. Domain knows nothing about JSON/HTTP/exec. Interfaces are defined on the consumer side (`usecase`).
-
-### Shared packages (root `internal/`, used by agent and central)
-- `internal/wire`: the JSON contract (only JSON-tagged contract types). Central decodes requests leniently (ignores unknown fields, so newer agents keep working); the agent decodes responses strictly, so central must never add response fields.
-- `internal/scanconfig`: `Config`, `Default()`, `Validate()`; the agent's `domain.ScanConfig` is an alias. Central validates `client set-config` with the same rules.
-
-### File locations
-- Agent binary: `/opt/vuln-agent/bin/vuln-agent`, symlinked as `/usr/bin/vuln-agent` (so `sudo vuln-agent scan` works; run it after patching a VM to resolve fixed findings right away)
-- Trivy binary: `/opt/vuln-agent/bin/trivy`
-- Config: `/etc/vuln-agent/config.yaml` (mode 600, owner root)
-- Spool: `/var/lib/vuln-agent/spool/`
-- Trivy cache: `/var/lib/vuln-agent/cache/`
-
-### Local config (`config.yaml`)
-See `packaging/config.example.yaml`.
-```yaml
-central_url: https://<central.domain>   # http:// allowed over Tailscale, with a warning
-client_id: <client_a>
-token: <per-host token>
-hostname_override: ""        # optional; defaults to the OS hostname
-ca_file: ""                  # optional, for a custom CA
-```
-
-### CLI subcommands
-- `vuln-agent scan`: run one scan cycle + send (invoked by a systemd timer)
-- `vuln-agent heartbeat`: send a heartbeat
-- `vuln-agent flush`: resend spooled reports
-- `vuln-agent enroll [--force]`: read `central_url` + `client_id` from config, read the enroll token from env `VULN_AGENT_ENROLL_TOKEN` or stdin (NEVER via CLI args, so it does not leak in `ps`), call `POST /api/v1/enroll`, and write `host_token` into `config.yaml` atomically (mode 600). Refuse if a token is already set, unless `--force`.
-- `vuln-agent version`
-- `vuln-agent check`: validate config, connectivity to central, and presence of the Trivy binary
-
-### `scan` flow
-1. Fetch scan config from `GET /api/v1/config` (read-only). On failure, use the last locally cached config, or the default if none exists.
-2. Run Trivy with a `context` timeout (default 40 minutes), at low priority (`nice`/`ionice` equivalent), with default arguments:
-   ```
-   rootfs /
-   --scanners vuln
-   --list-all-pkgs=false
-   --ignore-unfixed
-   --severity HIGH,CRITICAL
-   --timeout 30m
-   --cache-dir /var/lib/vuln-agent/cache
-   --skip-dirs /proc,/sys,/dev,/run,/tmp,/snap,/var/lib/snapd,/var/lib/docker,/var/lib/containerd,/mnt,/media,/var/cache,/root/.cache,/home/*/.cache,/home/*/.local/share/pnpm,/usr/share/doc
-   --format json -q --output <temp file>
-   ```
-   `severity`, `ignore_unfixed`, `skip_dirs`, and `timeout` can be overridden by config from central, but the agent ONLY accepts those fields. Reject any other field.
-3. Decode the output with `json.NewDecoder` (streaming) into a slim struct containing only:
-   `Target, Type, VulnerabilityID, PkgName, PkgPath, InstalledVersion, FixedVersion, Severity, Title`.
-4. Add host metadata:
-   `hostname, os_family, os_name, os_version, arch, kernel_running, uptime_seconds, reboot_required (check /var/run/reboot-required or needs-restarting -r), unattended_upgrades_enabled (or dnf-automatic on RHEL), agent_version, trivy_version, scanned_at, scan_duration_seconds`.
-5. Send the payload gzipped to `POST /api/v1/report`.
-6. If sending fails, save it to the spool (keep at most the 5 newest files, delete older ones). On the next scan or flush, send spooled reports first.
-7. If Trivy fails, still send a report with status `error` and its error message (truncated to at most 4KB), so central knows the scan failed.
-
-### Heartbeat
-`POST /api/v1/heartbeat` with compact host metadata. Scheduled every 15 minutes.
-
-### systemd
-- `vuln-agent-scan.service` + `vuln-agent-scan.timer` (daily, `RandomizedDelaySec=2h` so the 26 VMs do not scan simultaneously, `Persistent=true`)
-- `vuln-agent-heartbeat.service` + `.timer` (every 15 minutes)
-- Resource limits: `CPUQuota=100%`, `MemoryMax=1G`, `Nice=19`, `IOSchedulingClass=idle`
-
-### Logging
-Log to stdout/stderr (into journald), structured format (`log/slog`). NEVER print the token in logs.
+- The JSON contract is owned by the agent module: `github.com/idnatiya/netra-vuln-agent/pkg/wire` (request/response types) and `.../pkg/scanconfig` (`Config`, `Default()`, `Validate()`; central validates `client set-config` with the same rules). Central decodes requests leniently (ignores unknown fields, so newer agents keep working); the agent decodes responses strictly, so central must never add response fields.
+- Central pins the agent module by tag in `go.mod`; after a contract change, tag the agent repo and `go get github.com/idnatiya/netra-vuln-agent@vX.Y.Z`. For local work across both repos use an untracked `go.work` (`use . ../netra-vuln-agent`).
+- Agent status codes: 400/413/422 = permanent reject (agent drops the report); 401/403/409/429/5xx = retried or spooled.
+- Packaging, systemd units, the Ansible role (`vuln_agent`), and `fakecentral` are in the agent repo.
 
 ## Central Specification
 
@@ -183,48 +103,35 @@ Rules:
 - "Open" = `resolved_at IS NULL AND status = 'open'`. Triage (`accepted` / `false_positive`) needs a note and survives re-scans; it never deletes data.
 - Auth: `admin_users` (bcrypt) + `admin_sessions` (SHA-256 token hash, 12h). Cookie `vuln_session`: HttpOnly, Secure, SameSite=Strict, Path=/api/admin. State-changing requests must send a same-origin `Origin` (CSRF). Login limited per client IP; behind Caddy set `CENTRAL_TRUST_PROXY=true`.
 - Admins are created with the CLI only: `central admin create|passwd|list` (no sign-up).
-- Admin API JSON shapes live in `central/internal/adapter/httpapi/admin_dto.go` (not part of the agent contract in `internal/wire`).
+- Admin API JSON shapes live in `central/internal/adapter/httpapi/admin_dto.go` (not part of the agent contract in the agent module's `wire`).
 - Dashboard structure: `src/domain` (types + pure rules) <- `src/application` (ports + use cases) <- `src/infrastructure` (fetch + DTO mapping) / `src/presentation` (views, vue-query composables, shadcn `components/ui`); `src/di.ts` is the composition root. Views never call `fetch`.
 - Production CSP is `default-src 'self'`: no remote fonts/scripts/styles (a vitest guard checks `style.css`).
 
 ## Deployment
 - `deploy/central/docker-compose.yml`: `mysql` (named volume), `migrate` (one-shot `central migrate`), `central` (distroless, healthcheck `central healthcheck`), `caddy` (automatic HTTPS, serves the dashboard SPA, proxies `/api/*`; optional `ADMIN_ALLOW_CIDRS` for the dashboard), `backup` (daily `mysqldump` into `./backups`, `BACKUP_KEEP_DAYS`). Configure via `.env` (from `.env.example`); first admin: `docker compose exec central central admin create <name>`. `.dockerignore` keeps `dev-out/` and other local data out of the build context.
-- `deploy/ansible/roles/vuln_agent`:
-  - Detect `ansible_architecture` (x86_64/aarch64) and later `ansible_os_family` for `.deb`/`.rpm`
-  - `vuln_agent_install_method: binary` (now: copy `dist/vuln-agent-linux-<arch>` + pinned Trivy release with checksum) → `package` once Phase 4 ships packages; tarball fallback for unknown distros
-  - Template `config.yaml` from inventory vars, compared by content and preserving the existing host token (enroll rewrites the file)
-  - Enroll only when no token (or `vuln_agent_force_enroll`), enroll token from Ansible Vault, `no_log`
-  - Run `vuln-agent check`; enable timers once packaging provides the systemd units
-  - Example inventory grouped per client with different SSH user/port/key per group and `ProxyJump`
 - Local dev: `make dev` runs MySQL (127.0.0.1:3317, tmpfs, `deploy/dev/mysql.compose.yml`) + central (port 18080: Tailscale IP if up, else 127.0.0.1) + the dashboard (http://localhost:5173) in one terminal; Ctrl+C stops all, and if either process dies the other is stopped too. It migrates and seeds admin `admin` once (password in `dev-out/admin-password`). `make help` lists targets; `make dev-down` drops the dev DB; admin CLI via `make central ARGS="..."`.
-- Sample VM loop over Tailscale: `make dev` listens on the laptop's Tailscale IP when `tailscale` is up (else `127.0.0.1:18080`; override with `CENTRAL_ADDR`), create the client in the dashboard, then `make scan-dev ARGS="-e @<enroll-vars.yml>"` (a mode-600 file with `vuln_agent_enroll_token`, never committed; add `-e vuln_agent_force_enroll=true` after the dev DB was reset).
+- Sample VM loop over Tailscale: `make dev` listens on the laptop's Tailscale IP when `tailscale` is up (else `127.0.0.1:18080`; override with `CENTRAL_ADDR`), create the client in the dashboard, then in the agent repo `make scan-dev ARGS="-e @<enroll-vars.yml>"` (a mode-600 file with `vuln_agent_enroll_token`, never committed; add `-e vuln_agent_force_enroll=true` after the dev DB was reset).
 - Tests: `make test` (unit, MySQL tests skip), `make test-integration` (starts MySQL, sets `TEST_MYSQL_DSN`).
-- Manual install without Ansible: `.deb`/`.rpm` package or tarball + `install.sh`, fill in `config.yaml`, `vuln-agent enroll`, `vuln-agent check`.
 
-## Packaging & CI
-- nfpm/GoReleaser produces: `.deb`, `.rpm`, `.tar.gz` (amd64 + arm64)
-- Download the pinned Trivy binary at build time, verify its checksum, bundle it into the package
-- Postinstall script: create directories, set permissions, `systemctl daemon-reload`, enable timers (but do not start a scan if the config is not filled in yet)
-- Preremove script: stop and disable timers
-- GitLab CI: lint, test, build, package, and publish artifacts to the GitLab Package Registry; central image to the GitLab Container Registry
+## CI
+- GitLab CI: lint, test, build; central image to the GitLab Container Registry (agent packaging and CI live in the agent repo)
 
 ## Testing
-- Unit tests for the Trivy parser with JSON fixtures (including large files and empty output)
 - Unit tests for ingest logic (new finding, still present, resolved, reappeared, scan error)
 - Central integration tests with MySQL (testcontainers or compose)
 - Test that a client A token is rejected when sending for a client B host
 
 ## Documentation (`/docs`)
-- README: short architecture (text diagram), how to deploy central, how to enroll a new VM, how to revoke a host
-- Security notes: what the agent reads, what data is sent, data retention
-- Troubleshooting: scan timeouts, large output size, SELinux on RHEL, CentOS 7/8 EOL
+- README: short architecture (text diagram), how to deploy central, how to enroll a new VM (link to the agent repo), how to revoke a host
+- Security notes: data retention in central (what the agent reads/sends is documented in the agent repo)
+- Troubleshooting: large report size, enroll/revoke issues
 
 ## Phases
-1. **Phase 1**: agent (scan, slim, send, spool, heartbeat, enroll, check) + tests
-2. **Phase 2**: DB schema + migrations, central API (enroll, heartbeat, config, report) + tests, following the contract in `internal/wire`
+1. **Phase 1**: agent (done; now in the agent repo)
+2. **Phase 2**: DB schema + migrations, central API (enroll, heartbeat, config, report) + tests, following the contract in the agent module's `wire`
 3. **Phase 3**: central Docker Compose + admin dashboard (Vue) + admin API
-4. **Phase 4**: packaging (deb/rpm/tarball) + systemd + GitLab CI
-5. **Phase 5**: finalize the Ansible role (package install + timers) + documentation
+4. **Phase 4**: agent packaging + systemd + CI (agent repo); central CI here
+5. **Phase 5**: finalize the Ansible role (agent repo) + documentation
 
 ## Out of Scope (do not build)
 - Remote command execution in the agent

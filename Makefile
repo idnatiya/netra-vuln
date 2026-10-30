@@ -1,6 +1,3 @@
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-ANSIBLE_DIR := deploy/ansible
-
 MYSQL_COMPOSE := docker compose -f deploy/dev/mysql.compose.yml
 TEST_MYSQL_DSN ?= root:test@tcp(127.0.0.1:3317)/
 CENTRAL_DSN ?= root:test@tcp(127.0.0.1:3317)/vuln
@@ -11,8 +8,8 @@ DEV_ADMIN_USER ?= admin
 DEV_ADMIN_PASSWORD_FILE := dev-out/admin-password
 
 .DEFAULT_GOAL := help
-.PHONY: help dev dev-admin dev-down test test-integration mysql-up build-linux fakecentral central central-dev \
-	deploy-dev scan-dev dashboard-deps dashboard-dev dashboard-test compose-up compose-down
+.PHONY: help dev dev-admin dev-down test test-integration mysql-up central central-dev \
+	dashboard-deps dashboard-dev dashboard-test compose-up compose-down
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_\/-]+:.*## / {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -62,9 +59,6 @@ central-dev: mysql-up dist/central ## Run central only (no dashboard), e.g. for 
 	CENTRAL_DSN='$(CENTRAL_DSN)' dist/central migrate
 	CENTRAL_DSN='$(CENTRAL_DSN)' CENTRAL_ADDR='$(CENTRAL_ADDR)' dist/central serve
 
-fakecentral: ## Stand-in central that logs payloads, e.g. make fakecentral ARGS=-fail-reports
-	go run ./deploy/dev/fakecentral $(ARGS)
-
 FORCE:
 
 # --- Dashboard ---------------------------------------------------------------
@@ -87,21 +81,6 @@ test: dashboard-test ## Unit tests (MySQL tests skip)
 
 test-integration: mysql-up ## All Go tests including MySQL integration tests
 	TEST_MYSQL_DSN='$(TEST_MYSQL_DSN)' go test -count=1 ./...
-
-build-linux: ## Build vuln-agent for linux amd64 + arm64 into dist/
-	@for arch in amd64 arm64; do \
-		CGO_ENABLED=0 GOOS=linux GOARCH=$$arch go build -trimpath \
-			-ldflags "-s -w -X main.version=$(VERSION)" \
-			-o dist/vuln-agent-linux-$$arch ./agent/cmd/vuln-agent || exit 1; \
-	done
-
-# --- Sample VM (Ansible) -----------------------------------------------------
-
-deploy-dev: build-linux ## Install/enroll the agent on the dev inventory
-	cd $(ANSIBLE_DIR) && ansible-playbook site.yml $(ARGS)
-
-scan-dev: build-linux ## deploy-dev + run one scan
-	cd $(ANSIBLE_DIR) && ansible-playbook site.yml -e vuln_agent_run_scan=true $(ARGS)
 
 # --- Production stack (deploy/central/.env must exist; see .env.example) -----
 

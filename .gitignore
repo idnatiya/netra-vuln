@@ -33,3 +33,5 @@ coverage.*
 # Central compose runtime data
 /deploy/central/backups/
 /deploy/central/.env
+/go.work
+/go.work.sum

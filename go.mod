@@ -5,7 +5,6 @@ go 1.26.5
 require (
 	github.com/go-sql-driver/mysql v1.10.1
 	github.com/gofiber/fiber/v3 v3.6.1
-	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
