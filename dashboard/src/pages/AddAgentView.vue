@@ -20,7 +20,7 @@ const added = computed(() => (hosts.data.value ?? []).filter(h => !h.revokedAt &
 const rotate = useMutation({ mutationFn: async () => {
   const current = await api.listHosts(client.value)
   baseline.value = new Map(current.map(h => [h.id, !!h.revokedAt]))
-  return api.rotateEnrollToken(client.value)
+  return api.issueEnrollToken(client.value)
 }, onSuccess: value => { token.value = value } })
 
 watch(client, () => { token.value = ''; baseline.value.clear() })

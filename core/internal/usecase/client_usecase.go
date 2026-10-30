@@ -30,7 +30,7 @@ func NewClientUseCase(db *gorm.DB, log *logrus.Logger, validate *validator.Valid
 		EnrollTokenRepository: enrollTokenRepository, HostRepository: hostRepository}
 }
 
-// Create creates a client and returns its enroll token (shown once).
+// Create creates a client.
 func (c *ClientUseCase) Create(ctx context.Context, request *model.CreateClientRequest) (*model.CreateClientResponse, error) {
 	if err := c.Validate.Struct(request); err != nil {
 		return nil, invalid(err)
@@ -47,20 +47,15 @@ func (c *ClientUseCase) Create(ctx context.Context, request *model.CreateClientR
 		c.Log.Warnf("Failed create client : %+v", err)
 		return nil, fiber.ErrInternalServerError
 	}
-	token, hash := NewToken()
-	if err := c.EnrollTokenRepository.Create(tx, &entity.EnrollToken{ClientID: client.ID, TokenHash: hash, CreatedAt: t}); err != nil {
-		c.Log.Warnf("Failed create enroll token : %+v", err)
-		return nil, fiber.ErrInternalServerError
-	}
 	if err := tx.Commit().Error; err != nil {
 		c.Log.Warnf("Failed commit transaction : %+v", err)
 		return nil, fiber.ErrInternalServerError
 	}
-	return &model.CreateClientResponse{Name: client.Name, EnrollToken: token}, nil
+	return &model.CreateClientResponse{Name: client.Name}, nil
 }
 
-// RotateEnrollToken issues an independent single-use enrollment token.
-func (c *ClientUseCase) RotateEnrollToken(ctx context.Context, request *model.RotateEnrollTokenRequest) (*model.EnrollTokenResponse, error) {
+// IssueEnrollToken issues an independent single-use enrollment token.
+func (c *ClientUseCase) IssueEnrollToken(ctx context.Context, request *model.IssueEnrollTokenRequest) (*model.EnrollTokenResponse, error) {
 	if err := c.Validate.Struct(request); err != nil {
 		return nil, invalid(err)
 	}

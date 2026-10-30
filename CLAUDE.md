@@ -51,14 +51,14 @@ The agent lives in its own repo/module: `github.com/idnatiya/netra-vuln-agent` (
 ## Central Specification
 
 ### Endpoints (HTTPS, or HTTP over Tailscale; auth `Authorization: Bearer <token>`)
-- `POST /api/v1/enroll`: body `{client_id, enroll_token, hostname, ...metadata}`, returns `host_token`. `enroll_token` is a per-client token (created by an admin). `host_token` is unique per host and revocable. Re-enroll of an **active** hostname → 409; after `central host revoke`, enroll issues a new token for the same host row (history kept).
+- `POST /api/v1/enroll`: body `{client_id, enroll_token, hostname, ...metadata}`, returns `host_token`. `enroll_token` is issued by an admin for one successful enrollment and is bound to a client. `host_token` is unique per host and revocable. Re-enroll of an **active** hostname → 409; after `central host revoke`, enroll issues a new token for the same host row (history kept).
 - `POST /api/v1/heartbeat`
 - `GET  /api/v1/config`: returns the client's overrides (`clients.scan_config`, allowed fields only), or `{}` for agent defaults
 - `POST /api/v1/report`: accepts gzip, body size limit (e.g. 20MB after decompression), schema validation
 - `GET  /healthz`
 
 Admin CLI (subcommands of the central binary, not public endpoints):
-- `central client create <name>` → generates an enroll token (printed once)
+- `central client create <name>` creates a client; `central client enroll-token <name>` issues a single-use token (printed once)
 - `central client set-config <name> <file.json|->` / `central client set-config -clear <name>` / `central client list`
 - `central host list [-client <name>]`
 - `central host revoke <hostname> [-client <name>]`
@@ -84,7 +84,7 @@ Admin API (`/api/admin/v1/*`) responses use `model.WebResponse{data, paging, err
 
 ### Security
 - Tokens are stored hashed (e.g. SHA-256), not in plaintext
-- Tokens stay required over Tailscale: the tailnet is shared by all clients' VMs, so network reachability does not prove which client a host belongs to. Enroll tokens are per client (created once, kept in Ansible Vault); host tokens are issued to and stored by the agent itself.
+- Tokens stay required over Tailscale: the tailnet is shared by all clients' VMs, so network reachability does not prove which client a host belongs to. Enroll tokens are single-use and bound to a client; host tokens are issued to and stored by each agent.
 - Validate that a host can only write to its own client
 - Simple per-token rate limiting
 - Request size limits, read/write timeouts
@@ -110,7 +110,7 @@ Admin-only SPA; admins see every client (no per-client logins). Dark only, palet
 1. Hosts (home): issue-stream list, worst first (`worstFirst` in `rules.ts`); tabs Needs attention / All / Not reporting / Revoked with counts; client filter + sort; search; per row a severity stripe (`hostLevel`), a 14-day sparkline from `/trend?host_id=`, open critical/high, last scan
 2. Host detail (`/hosts/:id`): host facts and issues, counters (open critical/high, last scan), the re-scan command, revoke; tabs What to fix / Findings; right sidebar with last scan (resolved / new), host details, and tags. "What to fix" lists the host's components (tabs Open / Accepted / False positive). Each expands to a plain-language next step, a copy-ready fix command (`componentAdvice` in `src/lib/rules.ts`: apt/dnf upgrade, purge of a non-running fallback kernel vs upgrade + reboot of the running one, composer/npm/pip per app type, `dpkg -S`/`rpm -qf` for binaries), a bulk verdict for the whole component, and its CVEs with per-finding triage
 3. Search CVEs (`/findings`): flat list across hosts; filter by client, host, severity, triage status, CVE/package search; paging; triage
-4. Clients: cards with a 14-day sparkline (`/trend?client=`); create (enroll token shown once), per-client scan-config overrides
+4. Clients: cards with a 14-day sparkline (`/trend?client=`); create clients and configure per-client scan overrides
 5. Account (`/account`, from the sidebar user): profile, change password (`POST /api/admin/v1/me/password`; signs out the admin's other sessions), active sessions with device/IP (`GET /me/sessions`, `DELETE /me/sessions/:id`, `DELETE /me/sessions` = all others)
 
 Rules:

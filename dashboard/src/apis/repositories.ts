@@ -50,11 +50,11 @@ export function createHttpRepositories(http: HttpClient): Repositories {
     },
     clients: {
       list: async () => (await http.get<ClientDTO[]>('/clients')).map(toClient),
-      create: async (name) => (await http.request<{ enroll_token: string }>('POST', '/clients', { name })).enroll_token,
+      create: async (name) => { await http.request('POST', '/clients', { name }) },
       setScanConfig: (name, cfg) =>
         http.request<ScanConfig>('PUT', `/clients/${encodeURIComponent(name)}/scan-config`, cfg),
       clearScanConfig: (name) => http.request<void>('DELETE', `/clients/${encodeURIComponent(name)}/scan-config`),
-      rotateEnrollToken: async (name) =>
+      issueEnrollToken: async (name) =>
         (await http.request<{ enroll_token: string }>('POST', `/clients/${encodeURIComponent(name)}/enroll-token`)).enroll_token,
       installInfo: async () => {
         const i = await http.get<{ enabled: boolean, public_url: string, agent_version: string }>('/install')

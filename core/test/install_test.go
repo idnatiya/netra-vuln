@@ -70,7 +70,7 @@ func TestInstallScriptRejectsUnsafeSettings(t *testing.T) {
 	}
 }
 
-func TestRotateEnrollToken(t *testing.T) {
+func TestIssueEnrollToken(t *testing.T) {
 	ClearAll(t)
 	old := newClient(t, "client_a")
 	cookie := adminSession(t)
@@ -91,7 +91,24 @@ func TestRotateEnrollToken(t *testing.T) {
 	assert.Len(t, res.Data.EnrollToken, 64)
 
 	code, _ = enrollStatus(t, "client_a", old, "vm1")
-	assert.Equal(t, 401, code, "old token revoked")
-	code, _ = enrollStatus(t, "client_a", res.Data.EnrollToken, "vm1")
+	assert.Equal(t, 200, code, "independent token works")
+	code, _ = enrollStatus(t, "client_a", res.Data.EnrollToken, "vm2")
 	assert.Equal(t, 200, code, "new token works")
+}
+
+func TestEnrollTokenSingleUse(t *testing.T) {
+	ClearAll(t)
+	token := newClient(t, "client_a")
+	other := issueToken(t, "client_a")
+	newClient(t, "client_b")
+	code, _ := enrollStatus(t, "client_b", token, "vm1")
+	assert.Equal(t, 401, code)
+	code, _ = enrollStatus(t, "client_a", token, "vm1")
+	require.Equal(t, 200, code)
+	code, _ = enrollStatus(t, "client_a", token, "vm2")
+	assert.Equal(t, 401, code)
+	code, _ = enrollStatus(t, "client_a", other, "vm1")
+	assert.Equal(t, 409, code)
+	code, _ = enrollStatus(t, "client_a", other, "vm2")
+	assert.Equal(t, 200, code, "failed enrollment does not consume token")
 }

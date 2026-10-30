@@ -47,14 +47,15 @@ export function createUseCases(r: Repositories) {
     trend: (filter: TrendFilter) => r.trend.trend(filter),
 
     listClients: () => r.clients.list(),
-    rotateEnrollToken: (name: string) => r.clients.rotateEnrollToken(name),
+    issueEnrollToken: (name: string) => r.clients.issueEnrollToken(name),
     installInfo: () => r.clients.installInfo(),
     createClient: async (name: string) => {
       const n = name.trim()
       if (!isValidClientName(n)) {
         throw new ApiError('client name: lowercase letters, digits, "_" or "-", max 64 chars', 400)
       }
-      return { name: n, enrollToken: await r.clients.create(n) }
+      await r.clients.create(n)
+      return { name: n }
     },
     /** Parses the editor's JSON text; the server validates the values. Empty text clears overrides. */
     saveScanConfig: async (name: string, text: string): Promise<ScanConfig | null> => {

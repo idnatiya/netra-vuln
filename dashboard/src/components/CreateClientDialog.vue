@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { Check, Copy, TriangleAlert } from '@lucide/vue'
 import { ref } from 'vue'
 import { toast } from 'vue-sonner'
 import { useCreateClient } from '@/composables/queries'
@@ -11,8 +10,7 @@ import { Label } from './ui/label'
 
 const open = defineModel<boolean>('open', { required: true })
 const name = ref('')
-const created = ref<{ name: string, enrollToken: string } | null>(null)
-const copied = ref(false)
+const created = ref<{ name: string } | null>(null)
 const create = useCreateClient()
 
 async function submit() {
@@ -21,13 +19,6 @@ async function submit() {
   } catch (e) {
     toast.error(errorMessage(e))
   }
-}
-
-async function copy() {
-  if (!created.value) return
-  await navigator.clipboard.writeText(created.value.enrollToken)
-  copied.value = true
-  setTimeout(() => (copied.value = false), 2000)
 }
 
 function onOpenChange(o: boolean) {
@@ -46,7 +37,7 @@ function onOpenChange(o: boolean) {
       <template v-if="!created">
         <DialogHeader>
           <DialogTitle>New client</DialogTitle>
-          <DialogDescription>Creates the client and its enroll token for installing agents.</DialogDescription>
+          <DialogDescription>Creates a client for its agents and findings.</DialogDescription>
         </DialogHeader>
         <form class="grid gap-2" @submit.prevent="submit">
           <Label for="client-name">Name</Label>
@@ -62,22 +53,9 @@ function onOpenChange(o: boolean) {
       <template v-else>
         <DialogHeader>
           <DialogTitle>Client "{{ created.name }}" created</DialogTitle>
-          <DialogDescription>Copy the enroll token now. It is stored only as a hash and cannot be shown again.</DialogDescription>
+          <DialogDescription>Create a single-use token when adding each agent.</DialogDescription>
         </DialogHeader>
-        <div class="flex min-w-0 items-center gap-2 rounded-md border bg-muted/40 p-2">
-          <code class="min-w-0 flex-1 break-all font-mono text-xs">{{ created.enrollToken }}</code>
-          <Button size="icon" variant="ghost" :aria-label="copied ? 'Copied' : 'Copy token'" @click="copy">
-            <Check v-if="copied" class="size-4 text-ok" />
-            <Copy v-else class="size-4" />
-          </Button>
-        </div>
-        <div class="flex gap-2 text-xs text-muted-foreground">
-          <TriangleAlert class="size-4 shrink-0 text-sev-medium" />
-          <p>
-            Put it in Ansible Vault as the client's <code>vuln_agent_enroll_token</code>, or pass it to
-            <code>vuln-agent enroll</code> via <code>VULN_AGENT_ENROLL_TOKEN</code>.
-          </p>
-        </div>
+        <RouterLink :to="{ name: 'add-agent', query: { client: created.name } }" class="underline" @click="onOpenChange(false)">Add agent</RouterLink>
         <DialogFooter>
           <Button @click="onOpenChange(false)">Done</Button>
         </DialogFooter>

@@ -37,6 +37,8 @@ func TestEnroll(t *testing.T) {
 		"token must be stored as its SHA-256 hash")
 
 	code, _ = enrollStatus(t, "client_a", tok, "vm1")
+	assert.Equal(t, http.StatusUnauthorized, code, "used token")
+	code, _ = enrollStatus(t, "client_a", issueToken(t, "client_a"), "vm1")
 	assert.Equal(t, http.StatusConflict, code, "active host")
 
 	for name, c := range map[string][3]string{
@@ -62,7 +64,7 @@ func TestEnrollRevokeReenroll(t *testing.T) {
 	assert.Equal(t, http.StatusConflict, code, "second revoke")
 	assert.Equal(t, http.StatusUnauthorized, agentStatus(t, "GET", "/api/v1/config", h.Token, nil, false), "revoked token")
 
-	code, tok2 := enrollStatus(t, "client_a", enrollTokens["client_a"], "vm1")
+	code, tok2 := enrollStatus(t, "client_a", issueToken(t, "client_a"), "vm1")
 	require.Equal(t, http.StatusOK, code)
 	assert.Equal(t, http.StatusOK, agentStatus(t, "GET", "/api/v1/config", tok2, nil, false))
 	assert.Equal(t, 1, count(t, "SELECT COUNT(*) FROM hosts"), "re-enroll reactivates the same host")

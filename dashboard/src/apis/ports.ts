@@ -32,12 +32,12 @@ export interface HostsRepository {
 
 export interface ClientsRepository {
   list(): Promise<Client[]>
-  /** Returns the enroll token; it is shown exactly once. */
-  create(name: string): Promise<string>
+  /** Creates a client. */
+  create(name: string): Promise<void>
   setScanConfig(name: string, cfg: ScanConfig): Promise<ScanConfig>
   clearScanConfig(name: string): Promise<void>
-  /** Revokes the client's enroll tokens and returns a new one (shown once). */
-  rotateEnrollToken(name: string): Promise<string>
+  /** Returns an independent single-use enroll token. */
+  issueEnrollToken(name: string): Promise<string>
   installInfo(): Promise<{ enabled: boolean, publicUrl: string, agentVersion: string }>
 }
 

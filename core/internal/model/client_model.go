@@ -19,8 +19,7 @@ type CreateClientRequest struct {
 }
 
 type CreateClientResponse struct {
-	Name        string `json:"name"`
-	EnrollToken string `json:"enroll_token"` // shown once
+	Name string `json:"name"`
 }
 
 // SetScanConfigRequest carries already-validated wire.ScanConfig JSON; nil clears it.
@@ -50,7 +49,7 @@ type OverviewResponse struct {
 	Clients []ClientResponse `json:"clients"`
 }
 
-type RotateEnrollTokenRequest struct {
+type IssueEnrollTokenRequest struct {
 	Name string `validate:"required,max=64"`
 }
 

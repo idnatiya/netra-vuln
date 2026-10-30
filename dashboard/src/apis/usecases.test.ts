@@ -31,7 +31,7 @@ describe('createClient', () => {
     const uc = createUseCases(r)
     await expect(uc.createClient('Bad Name')).rejects.toBeInstanceOf(ApiError)
     expect(r.clients.create).not.toHaveBeenCalled()
-    expect(await uc.createClient(' acme ')).toEqual({ name: 'acme', enrollToken: 'tok' })
+    expect(await uc.createClient(' acme ')).toEqual({ name: 'acme' })
   })
 })
 

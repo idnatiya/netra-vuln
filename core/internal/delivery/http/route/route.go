@@ -89,7 +89,7 @@ func (c *RouteConfig) SetupAdminAuthRoute() {
 	admin.Post("/clients", c.ClientController.Create)
 	admin.Put("/clients/:name/scan-config", c.ClientController.SetScanConfig)
 	admin.Delete("/clients/:name/scan-config", c.ClientController.ClearScanConfig)
-	admin.Post("/clients/:name/enroll-token", c.ClientController.RotateEnrollToken)
+	admin.Post("/clients/:name/enroll-token", c.ClientController.IssueEnrollToken)
 	admin.Get("/install", c.InstallController.Get)
 
 	admin.Get("/hosts", c.HostController.List)

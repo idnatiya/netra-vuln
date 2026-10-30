@@ -40,10 +40,10 @@ func (c *ClientController) Create(ctx fiber.Ctx) error {
 	return ctx.Status(fiber.StatusCreated).JSON(model.WebResponse[*model.CreateClientResponse]{Data: response})
 }
 
-// RotateEnrollToken issues a new enroll token (shown once) and revokes the old ones.
-func (c *ClientController) RotateEnrollToken(ctx fiber.Ctx) error {
+// IssueEnrollToken issues an independent single-use enroll token.
+func (c *ClientController) IssueEnrollToken(ctx fiber.Ctx) error {
 	name := ctx.Params("name")
-	response, err := c.UseCase.RotateEnrollToken(ctx.Context(), &model.RotateEnrollTokenRequest{Name: name})
+	response, err := c.UseCase.IssueEnrollToken(ctx.Context(), &model.IssueEnrollTokenRequest{Name: name})
 	if err != nil {
 		return err
 	}

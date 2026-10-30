@@ -23,13 +23,13 @@ const level = (c: Client) => (c.openCritical > 0 ? 'critical' : c.openHigh > 0 ?
 </script>
 
 <template>
-  <PageHeader title="Clients" description="Each client has its own hosts, enroll token, and scan settings.">
+  <PageHeader title="Clients" description="Each client has its own hosts and scan settings.">
     <Button @click="creating = true"><Plus /> Create client</Button>
   </PageHeader>
   <SearchBox v-model="search" placeholder="Filter clients…" />
 
   <p v-if="clients.isSuccess.value && !clients.data.value?.length" class="text-muted-foreground">
-    No clients yet. Create one to get an enroll token.
+    No clients yet. Create one to add agents.
   </p>
 
   <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">

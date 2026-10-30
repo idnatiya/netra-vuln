@@ -90,7 +90,14 @@ func mustJSON(v any) []byte {
 // newClient creates a client and returns its enroll token.
 func newClient(t *testing.T, name string) string {
 	t.Helper()
-	res, err := uc.Client.Create(context.Background(), &model.CreateClientRequest{Name: name})
+	_, err := uc.Client.Create(context.Background(), &model.CreateClientRequest{Name: name})
+	require.NoError(t, err)
+	return issueToken(t, name)
+}
+
+func issueToken(t *testing.T, name string) string {
+	t.Helper()
+	res, err := uc.Client.IssueEnrollToken(context.Background(), &model.IssueEnrollTokenRequest{Name: name})
 	require.NoError(t, err)
 	return res.EnrollToken
 }
@@ -125,7 +132,7 @@ func enrollHost(t *testing.T, client, hostname string) host {
 	if _, ok := enrollTokens[client]; !ok {
 		enrollTokens[client] = newClient(t, client)
 	}
-	code, token := enrollStatus(t, client, enrollTokens[client], hostname)
+	code, token := enrollStatus(t, client, issueToken(t, client), hostname)
 	require.Equal(t, http.StatusOK, code)
 	var id int64
 	require.NoError(t, db.Raw("SELECT id FROM hosts WHERE hostname = ?", hostname).Scan(&id).Error)

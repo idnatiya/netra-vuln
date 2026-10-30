@@ -42,7 +42,8 @@ environment (or config.json in ./ or ./core):
 commands:
   serve                                    run the API server
   migrate                                  apply database migrations
-  client create <name>                     create a client, print its enroll token once
+  client enroll-token <name>               issue one single-use enroll token
+  client create <name>                     create a client
   client set-config <name> <file.json|->   set scan overrides (wire.ScanConfig JSON)
   client set-config -clear <name>          remove scan overrides (agent defaults)
   client list
@@ -139,7 +140,14 @@ func clientCmd(ctx context.Context, uc *config.UseCases, sub string, args []stri
 		if err != nil {
 			return err
 		}
-		fmt.Printf("client %q created.\nenroll token (shown once):\n%s\n", res.Name, res.EnrollToken)
+		fmt.Printf("client %q created.\n", res.Name)
+		return nil
+	case sub == "enroll-token" && len(pos) == 1:
+		res, err := uc.Client.IssueEnrollToken(ctx, &model.IssueEnrollTokenRequest{Name: pos[0]})
+		if err != nil {
+			return err
+		}
+		fmt.Println(res.EnrollToken)
 		return nil
 	case sub == "set-config" && *clear && len(pos) == 1:
 		return uc.Client.SetScanConfig(ctx, &model.SetScanConfigRequest{Name: pos[0]})
