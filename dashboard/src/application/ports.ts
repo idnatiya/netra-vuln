@@ -1,5 +1,6 @@
 import type {
-  Client, Component, ComponentFilter, Finding, FindingFilter, Host, Page, ScanConfig, Session, TriageStatus,
+  AdminSession, Client, Component, ComponentFilter, Finding, FindingFilter, Host, Page, ScanConfig, Session, TrendFilter,
+  TrendPoint, TriageStatus,
 } from '@/domain/models'
 
 // Ports implemented by infrastructure (HTTP) and by fakes in tests.
@@ -8,6 +9,12 @@ export interface AuthRepository {
   login(username: string, password: string): Promise<Session>
   logout(): Promise<void>
   me(): Promise<Session>
+  /** Returns how many other sessions were signed out. */
+  changePassword(current: string, next: string): Promise<number>
+  sessions(): Promise<AdminSession[]>
+  revokeSession(id: number): Promise<void>
+  /** Returns how many sessions were signed out. */
+  revokeOtherSessions(): Promise<number>
 }
 
 export interface FindingsRepository {
@@ -31,8 +38,13 @@ export interface ClientsRepository {
   clearScanConfig(name: string): Promise<void>
 }
 
+export interface TrendRepository {
+  trend(filter: TrendFilter): Promise<TrendPoint[]>
+}
+
 export interface Repositories {
   auth: AuthRepository
+  trend: TrendRepository
   findings: FindingsRepository
   hosts: HostsRepository
   clients: ClientsRepository

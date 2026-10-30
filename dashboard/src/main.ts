@@ -1,6 +1,5 @@
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
-import { usePreferredDark } from '@vueuse/core'
-import { createApp, watchEffect } from 'vue'
+import { createApp } from 'vue'
 import { UnauthorizedError } from '@/application/errors'
 import { buildUseCases, UseCasesKey } from '@/di'
 import { session } from '@/presentation/composables/session'
@@ -29,8 +28,5 @@ onUnauthorized = () => {
   const current = router.currentRoute.value
   if (current.name !== 'login') router.push({ name: 'login', query: { next: current.fullPath } })
 }
-
-const dark = usePreferredDark()
-watchEffect(() => document.documentElement.classList.toggle('dark', dark.value))
 
 createApp(App).provide(UseCasesKey, uc).use(router).use(VueQueryPlugin, { queryClient }).mount('#app')

@@ -1,26 +1,25 @@
 <script setup lang="ts">
-import { ChevronLeft, ChevronRight, ExternalLink, Search } from '@lucide/vue'
+import { ArrowDownWideNarrow, ChevronLeft, ChevronRight, CircleCheck, Server, TriangleAlert, Users } from '@lucide/vue'
 import { refDebounced } from '@vueuse/core'
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { type Finding, type FindingFilter, type FindingSort, SEVERITIES, type Severity, TRIAGE_STATUSES, type TriageStatus } from '@/domain/models'
-import { daysSince, pageCount } from '@/domain/rules'
-import SeverityBadge from '@/presentation/components/SeverityBadge.vue'
-import TriageBadge from '@/presentation/components/TriageBadge.vue'
+import { pageCount } from '@/domain/rules'
+import FilterBar from '@/presentation/components/FilterBar.vue'
+import FilterSelect from '@/presentation/components/FilterSelect.vue'
+import FindingRow from '@/presentation/components/FindingRow.vue'
+import PageHeader from '@/presentation/components/PageHeader.vue'
+import SearchBox from '@/presentation/components/SearchBox.vue'
 import TriageDialog from '@/presentation/components/TriageDialog.vue'
-import { Button } from '@/presentation/components/ui/button'
-import { Card, CardContent } from '@/presentation/components/ui/card'
-import { Input } from '@/presentation/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/presentation/components/ui/select'
-import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/presentation/components/ui/table'
-import { useFindings, useHosts } from '@/presentation/composables/queries'
+import { useClients, useFindings, useHosts } from '@/presentation/composables/queries'
 import { useClientFilter } from '@/presentation/composables/useClientFilter'
-import { formatDateTime, plural } from '@/presentation/lib/format'
+import { formatNumber } from '@/presentation/lib/format'
 
 const ANY = '__any__'
 const route = useRoute()
 const { client } = useClientFilter()
 const hosts = useHosts(client)
+const clients = useClients()
 
 const q = (k: string) => (typeof route.query[k] === 'string' ? (route.query[k] as string) : '')
 const search = ref(q('q'))
@@ -32,6 +31,11 @@ const sort = ref<FindingSort>('severity')
 const includeResolved = ref(false)
 const page = ref(1)
 const pageSize = 50
+
+const clientFilter = computed({
+  get: () => client.value ?? ANY,
+  set: (v: string) => (client.value = v === ANY ? undefined : v),
+})
 
 const filter = computed<FindingFilter>(() => ({
   client: client.value,
@@ -54,115 +58,70 @@ const pages = computed(() => (data.value ? pageCount(data.value) : 1))
 const triaging = ref<Finding | null>(null)
 
 const statusLabel: Record<TriageStatus, string> = { open: 'Open', accepted: 'Accepted', false_positive: 'False positive' }
-const advisory = (cve: string) =>
-  cve.startsWith('GHSA-') ? `https://github.com/advisories/${cve}` : `https://avd.aquasec.com/nvd/${cve.toLowerCase()}`
+const clientOptions = computed(() => [{ value: ANY, label: 'All clients' }, ...(clients.data.value ?? []).map((c) => ({ value: c.name, label: c.name }))])
+const hostOptions = computed(() => [
+  { value: ANY, label: 'All hosts' },
+  ...(hosts.data.value ?? []).filter((h) => !h.revokedAt).map((h) => ({ value: String(h.id), label: `${h.client}/${h.hostname}` })),
+])
+const severityOptions = [{ value: ANY, label: 'Any severity' }, ...SEVERITIES.map((s) => ({ value: s, label: s.charAt(0) + s.slice(1).toLowerCase() }))]
+const statusOptions = [{ value: ANY, label: 'Any status' }, ...TRIAGE_STATUSES.map((s) => ({ value: s, label: statusLabel[s] }))]
+const sortOptions: { value: FindingSort, label: string }[] = [
+  { value: 'severity', label: 'Most severe' }, { value: 'first_seen', label: 'Oldest first' }, { value: 'last_seen', label: 'Recently seen' },
+]
+
+const tokens = computed(() => {
+  const t: { key: string, value: string }[] = []
+  if (client.value) t.push({ key: 'client', value: client.value })
+  if (severity.value !== ANY) t.push({ key: 'severity', value: severity.value.toLowerCase() })
+  if (status.value !== ANY) t.push({ key: 'is', value: status.value })
+  if (includeResolved.value) t.push({ key: 'include', value: 'resolved' })
+  return t
+})
+function removeToken(key: string) {
+  if (key === 'client') client.value = undefined
+  if (key === 'severity') severity.value = ANY
+  if (key === 'is') status.value = ANY
+  if (key === 'include') includeResolved.value = false
+}
+
+const grid = 'grid grid-cols-[minmax(0,1fr)_4.5rem] items-center gap-x-4 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_11rem_4.5rem]'
 </script>
 
 <template>
-  <div class="grid gap-4">
-    <Card class="py-3">
-      <CardContent class="flex flex-wrap items-center gap-2 px-3">
-        <div class="relative min-w-56 flex-1">
-          <Search class="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input v-model="search" class="pl-8" placeholder="Search CVE or package" aria-label="Search CVE or package" />
-        </div>
-        <Select v-model="severity">
-          <SelectTrigger class="w-36" aria-label="Severity"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem :value="ANY">Any severity</SelectItem>
-            <SelectItem v-for="s in SEVERITIES" :key="s" :value="s">{{ s }}</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select v-model="status">
-          <SelectTrigger class="w-40" aria-label="Status"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem :value="ANY">Any status</SelectItem>
-            <SelectItem v-for="s in TRIAGE_STATUSES" :key="s" :value="s">{{ statusLabel[s] }}</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select v-model="hostId">
-          <SelectTrigger class="w-44" aria-label="Host"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem :value="ANY">All hosts</SelectItem>
-            <SelectItem v-for="h in (hosts.data.value ?? []).filter((h) => !h.revokedAt)" :key="h.id" :value="String(h.id)">
-              {{ h.client }}/{{ h.hostname }}
-            </SelectItem>
-          </SelectContent>
-        </Select>
-        <Select v-model="sort">
-          <SelectTrigger class="w-40" aria-label="Sort"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="severity">Most severe</SelectItem>
-            <SelectItem value="first_seen">Oldest first</SelectItem>
-            <SelectItem value="last_seen">Recently seen</SelectItem>
-          </SelectContent>
-        </Select>
-        <label class="flex items-center gap-2 text-sm text-muted-foreground">
-          <input v-model="includeResolved" type="checkbox" class="accent-primary"> Include resolved
-        </label>
-      </CardContent>
-    </Card>
+  <PageHeader title="Search CVEs" description="Findings across every host." />
 
-    <Card class="py-0">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead class="w-24">Severity</TableHead>
-            <TableHead>Vulnerability</TableHead>
-            <TableHead>Package</TableHead>
-            <TableHead>Host</TableHead>
-            <TableHead class="text-right">Age</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead class="w-20" />
-          </TableRow>
-        </TableHeader>
-        <TableBody :class="findings.isFetching.value && 'opacity-60 transition-opacity'">
-          <TableRow v-for="f in data?.items ?? []" :key="f.id">
-            <TableCell><SeverityBadge :severity="f.severity" /></TableCell>
-            <TableCell class="max-w-80">
-              <a :href="advisory(f.cve)" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 font-mono text-xs hover:underline">
-                {{ f.cve }} <ExternalLink class="size-3" />
-              </a>
-              <p class="truncate text-xs text-muted-foreground" :title="f.title">{{ f.title }}</p>
-            </TableCell>
-            <TableCell class="max-w-64">
-              <div class="truncate font-medium" :title="f.pkg">{{ f.pkg }}</div>
-              <div class="truncate text-xs text-muted-foreground" :title="`${f.pkgPath || f.target} (${f.type})`">
-                {{ f.installedVersion }} → <span class="text-ok">{{ f.fixedVersion || 'no fix' }}</span>
-              </div>
-            </TableCell>
-            <TableCell class="text-sm">
-              <RouterLink :to="{ name: 'host', params: { id: f.hostId } }" class="hover:underline">{{ f.hostname }}</RouterLink>
-              <div class="text-xs text-muted-foreground">{{ f.client }}</div>
-            </TableCell>
-            <TableCell class="text-right tabular-nums" :title="`first seen ${formatDateTime(f.firstSeen)}`">
-              {{ daysSince(f.firstSeen) }}d
-            </TableCell>
-            <TableCell>
-              <TriageBadge :status="f.status" />
-              <p v-if="f.resolvedAt" class="mt-1 text-xs text-ok">resolved</p>
-              <p v-else-if="f.note" class="mt-1 max-w-40 truncate text-xs text-muted-foreground" :title="f.note">{{ f.note }}</p>
-            </TableCell>
-            <TableCell><Button size="sm" variant="outline" @click="triaging = f">Triage</Button></TableCell>
-          </TableRow>
-          <TableEmpty v-if="findings.isSuccess.value && !data?.items.length" :colspan="7">
-            No findings match these filters.
-          </TableEmpty>
-          <TableEmpty v-if="findings.isError.value" :colspan="7">
-            <span class="text-destructive">{{ findings.error.value?.message }}</span>
-          </TableEmpty>
-        </TableBody>
-      </Table>
-      <div class="flex items-center justify-between border-t px-4 py-3 text-sm text-muted-foreground">
-        <span>{{ data ? plural(data.total, 'finding') : 'Loading…' }}</span>
-        <div class="flex items-center gap-2">
-          <span>Page {{ page }} of {{ pages }}</span>
-          <Button size="icon-sm" variant="outline" aria-label="Previous page" :disabled="page <= 1" @click="page--"><ChevronLeft /></Button>
-          <Button size="icon-sm" variant="outline" aria-label="Next page" :disabled="page >= pages" @click="page++"><ChevronRight /></Button>
-        </div>
-      </div>
-    </Card>
-
-    <TriageDialog :finding="triaging" @close="triaging = null" />
+  <div class="flex flex-wrap items-center gap-3">
+    <FilterBar>
+      <FilterSelect v-model="clientFilter" :icon="Users" label="Client" :options="clientOptions" />
+      <FilterSelect v-model="hostId" :icon="Server" label="Host" :options="hostOptions" />
+      <FilterSelect v-model="severity" :icon="TriangleAlert" label="Severity" :options="severityOptions" />
+      <FilterSelect v-model="status" :icon="CircleCheck" label="Status" :options="statusOptions" />
+      <FilterSelect v-model="sort" :icon="ArrowDownWideNarrow" label="Sort" :options="sortOptions" />
+    </FilterBar>
+    <label class="flex items-center gap-2 text-muted-foreground">
+      <input v-model="includeResolved" type="checkbox" class="accent-primary"> Include resolved
+    </label>
   </div>
+  <SearchBox v-model="search" placeholder="Search by CVE or package…" :tokens="tokens" @remove-token="removeToken" />
+
+  <div class="overflow-hidden rounded-md border bg-card" :class="findings.isFetching.value && 'opacity-70 transition-opacity'">
+    <div :class="[grid, 'border-b bg-muted px-4 py-2.5 text-muted-foreground']">
+      <span class="micro-cap">CVE</span><span class="micro-cap hidden md:block">Package</span>
+      <span class="micro-cap hidden md:block">Installed → fixed</span><span class="micro-cap hidden md:block">Host</span>
+      <span class="micro-cap text-right">Age</span>
+    </div>
+    <p v-if="findings.isError.value" class="px-4 py-6 text-destructive">{{ findings.error.value?.message }}</p>
+    <p v-else-if="findings.isSuccess.value && !data?.items.length" class="px-4 py-6 text-center text-muted-foreground">No findings match these filters.</p>
+    <FindingRow v-for="f in data?.items ?? []" :key="f.id" :finding="f" :grid="grid" show-host @triage="triaging = f" />
+  </div>
+
+  <div class="flex items-center justify-between text-muted-foreground">
+    <span class="text-[13px]">{{ data ? `${formatNumber(data.total)} findings · page ${page} of ${pages}` : 'Loading…' }}</span>
+    <div class="inline-flex divide-x divide-input rounded-md border border-input bg-muted/40">
+      <button type="button" aria-label="Previous page" class="inline-flex size-8 items-center justify-center hover:bg-muted disabled:opacity-40" :disabled="page <= 1" @click="page--"><ChevronLeft class="size-4" /></button>
+      <button type="button" aria-label="Next page" class="inline-flex size-8 items-center justify-center hover:bg-muted disabled:opacity-40" :disabled="page >= pages" @click="page++"><ChevronRight class="size-4" /></button>
+    </div>
+  </div>
+
+  <TriageDialog :finding="triaging" @close="triaging = null" />
 </template>

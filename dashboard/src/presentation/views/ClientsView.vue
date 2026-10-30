@@ -1,62 +1,65 @@
 <script setup lang="ts">
-import { Plus } from '@lucide/vue'
-import { ref } from 'vue'
+import { Plus, SlidersHorizontal } from '@lucide/vue'
+import { computed, ref } from 'vue'
 import type { Client } from '@/domain/models'
 import CreateClientDialog from '@/presentation/components/CreateClientDialog.vue'
+import PageHeader from '@/presentation/components/PageHeader.vue'
 import ScanConfigDialog from '@/presentation/components/ScanConfigDialog.vue'
+import SearchBox from '@/presentation/components/SearchBox.vue'
+import TrendSparkline from '@/presentation/components/TrendSparkline.vue'
 import { Button } from '@/presentation/components/ui/button'
-import { Card } from '@/presentation/components/ui/card'
-import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/presentation/components/ui/table'
 import { useClients } from '@/presentation/composables/queries'
-import { formatDate, plural } from '@/presentation/lib/format'
+import { formatDate, formatNumber, plural } from '@/presentation/lib/format'
 
 const clients = useClients()
 const creating = ref(false)
 const editing = ref<Client | null>(null)
+const search = ref('')
+const visible = computed(() => {
+  const q = search.value.trim().toLowerCase()
+  return (clients.data.value ?? []).filter((c) => !q || c.name.includes(q))
+})
+const level = (c: Client) => (c.openCritical > 0 ? 'critical' : c.openHigh > 0 ? 'high' : 'clean')
 </script>
 
 <template>
-  <div class="grid gap-4">
-    <div class="flex items-center justify-between">
-      <p class="text-sm text-muted-foreground">{{ plural(clients.data.value?.length ?? 0, 'client') }}</p>
-      <Button @click="creating = true"><Plus /> New client</Button>
-    </div>
-    <Card class="py-0">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Client</TableHead>
-            <TableHead class="text-right">Active hosts</TableHead>
-            <TableHead class="text-right">Open critical</TableHead>
-            <TableHead class="text-right">Open high</TableHead>
-            <TableHead>Scan config</TableHead>
-            <TableHead>Created</TableHead>
-            <TableHead class="w-28" />
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          <TableRow v-for="c in clients.data.value ?? []" :key="c.name">
-            <TableCell>
-              <RouterLink :to="{ name: 'hosts', query: { client: c.name } }" class="font-medium hover:underline">{{ c.name }}</RouterLink>
-            </TableCell>
-            <TableCell class="text-right tabular-nums">{{ c.hosts }}</TableCell>
-            <TableCell class="text-right tabular-nums" :class="{ 'font-semibold text-sev-critical': c.openCritical > 0 }">{{ c.openCritical }}</TableCell>
-            <TableCell class="text-right tabular-nums" :class="{ 'text-sev-high': c.openHigh > 0 }">{{ c.openHigh }}</TableCell>
-            <TableCell class="max-w-72">
-              <code v-if="c.scanConfig" class="block truncate text-xs" :title="JSON.stringify(c.scanConfig)">{{ JSON.stringify(c.scanConfig) }}</code>
-              <span v-else class="text-sm text-muted-foreground">agent defaults</span>
-            </TableCell>
-            <TableCell class="text-sm text-muted-foreground">{{ formatDate(c.createdAt) }}</TableCell>
-            <TableCell><Button size="sm" variant="outline" @click="editing = c">Scan config</Button></TableCell>
-          </TableRow>
-          <TableEmpty v-if="clients.isSuccess.value && !clients.data.value?.length" :colspan="7">
-            No clients yet. Create one to get an enroll token.
-          </TableEmpty>
-        </TableBody>
-      </Table>
-    </Card>
+  <PageHeader title="Clients" description="Each client has its own hosts, enroll token, and scan settings.">
+    <Button @click="creating = true"><Plus /> Create client</Button>
+  </PageHeader>
+  <SearchBox v-model="search" placeholder="Filter clients…" />
 
-    <CreateClientDialog v-model:open="creating" />
-    <ScanConfigDialog :client="editing" @close="editing = null" />
+  <p v-if="clients.isSuccess.value && !clients.data.value?.length" class="text-muted-foreground">
+    No clients yet. Create one to get an enroll token.
+  </p>
+
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+    <div v-for="c in visible" :key="c.name" class="flex flex-col rounded-md border bg-card">
+      <div class="flex items-center gap-3 px-4 pt-4">
+        <span class="flex size-8 shrink-0 items-center justify-center rounded-md bg-brand font-semibold">{{ c.name.charAt(0).toUpperCase() }}</span>
+        <div class="min-w-0 flex-1">
+          <RouterLink :to="{ name: 'hosts', query: { client: c.name } }" class="font-semibold hover:underline">{{ c.name }}</RouterLink>
+          <p class="truncate text-[13px] text-muted-foreground">
+            {{ plural(c.hosts, 'host') }} · {{ c.scanConfig ? 'custom scan config' : 'agent defaults' }} · since {{ formatDate(c.createdAt) }}
+          </p>
+        </div>
+      </div>
+      <div class="px-4 py-4"><TrendSparkline :client="c.name" :level="level(c)" :width="280" class="h-7 w-full" /></div>
+      <div class="grid grid-cols-2 divide-x border-t">
+        <div class="px-4 py-2">
+          <p class="micro-cap text-muted-foreground">Critical</p>
+          <p class="font-semibold tabular-nums">{{ c.openCritical ? formatNumber(c.openCritical) : '–' }}</p>
+        </div>
+        <div class="px-4 py-2">
+          <p class="micro-cap text-muted-foreground">High</p>
+          <p class="font-semibold tabular-nums">{{ c.openHigh ? formatNumber(c.openHigh) : '–' }}</p>
+        </div>
+      </div>
+      <div class="flex gap-2 border-t px-4 py-3">
+        <Button variant="outline" @click="editing = c"><SlidersHorizontal /> Scan config</Button>
+      </div>
+    </div>
   </div>
+
+  <CreateClientDialog v-model:open="creating" />
+  <ScanConfigDialog :client="editing" @close="editing = null" />
 </template>

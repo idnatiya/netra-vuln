@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Host } from './models'
-import { componentAdvice, daysSince, isRunningKernel, hostHealth, hostIssues, isValidClientName, pageCount, triageNeedsNote } from './rules'
+import { componentAdvice, dailyTotals, daysSince, hostHealth, hostIssues, hostLevel, inHostTab, isRunningKernel, isValidClientName, pageCount, triageNeedsNote, worstFirst } from './rules'
 
 const base: Host = {
   id: 1, client: 'a', hostname: 'vm', osFamily: 'debian', osName: 'Ubuntu', osVersion: '24.04', arch: 'amd64',
@@ -81,5 +81,48 @@ describe('componentAdvice', () => {
     expect(componentAdvice({ ...app, key: '/home/u/.m2', types: ['jar'] }, ubuntu).command).toBeUndefined()
     expect(componentAdvice({ kind: 'binary', key: '/usr/bin/dockerd', packages: ['stdlib'], pkgCount: 1, types: ['gobinary'] }, ubuntu))
       .toMatchObject({ title: 'dockerd', command: 'dpkg -S /usr/bin/dockerd' })
+  })
+})
+
+describe('hostLevel', () => {
+  it('uses the worst open severity, none before the first good scan', () => {
+    expect(hostLevel({ ...base, openCritical: 1, openHigh: 5 })).toBe('critical')
+    expect(hostLevel({ ...base, openHigh: 2 })).toBe('high')
+    expect(hostLevel(base)).toBe('clean')
+    expect(hostLevel({ ...base, lastOkScanAt: null })).toBe('none')
+  })
+})
+
+describe('inHostTab', () => {
+  it('splits hosts into the list tabs', () => {
+    const revoked = { ...base, revokedAt: new Date(), openCritical: 3 }
+    const stale = { ...base, staleHeartbeat: true }
+    const open = { ...base, openHigh: 1 }
+    expect([base, revoked, stale, open].filter((h) => inHostTab(h, 'attention'))).toEqual([stale, open])
+    expect([base, revoked, stale, open].filter((h) => inHostTab(h, 'all'))).toEqual([base, stale, open])
+    expect([base, revoked, stale, open].filter((h) => inHostTab(h, 'stale'))).toEqual([stale])
+    expect([base, revoked, stale, open].filter((h) => inHostTab(h, 'revoked'))).toEqual([revoked])
+  })
+})
+
+describe('worstFirst', () => {
+  it('puts stale hosts first, then by open critical, high, name', () => {
+    const a = { ...base, hostname: 'a', openHigh: 9 }
+    const b = { ...base, hostname: 'b', openCritical: 1 }
+    const c = { ...base, hostname: 'c', staleScan: true }
+    const d = { ...base, hostname: 'd', openHigh: 9 }
+    expect([d, a, b, c].sort(worstFirst).map((h) => h.hostname)).toEqual(['c', 'b', 'a', 'd'])
+  })
+})
+
+describe('dailyTotals', () => {
+  it('fills days without a scan with the previous value', () => {
+    const today = new Date(2026, 9, 30)
+    const pts = [
+      { day: new Date(2026, 9, 27), critical: 1, high: 2 },
+      { day: new Date(2026, 9, 29), critical: 0, high: 1 },
+    ]
+    expect(dailyTotals(pts, 5, today)).toEqual([0, 3, 3, 1, 1])
+    expect(dailyTotals([], 3, today)).toEqual([0, 0, 0])
   })
 })

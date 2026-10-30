@@ -1,4 +1,4 @@
-import type { Component, ComponentFilter, FindingFilter, ScanConfig, TriageStatus } from '@/domain/models'
+import type { Component, ComponentFilter, FindingFilter, ScanConfig, TrendFilter, TriageStatus } from '@/domain/models'
 import { isValidClientName, triageNeedsNote } from '@/domain/rules'
 import { ApiError } from './errors'
 import type { Repositories } from './ports'
@@ -21,6 +21,17 @@ export function createUseCases(r: Repositories) {
     },
     logout: () => r.auth.logout(),
     currentSession: () => r.auth.me(),
+    /** Validates locally (length, confirmation) so typos never reach the server. */
+    changePassword: (current: string, next: string, confirm: string) => {
+      if (!current) throw new ApiError('enter your current password', 400)
+      if (next.length < 12 || next.length > 72) throw new ApiError('the new password must be 12-72 characters', 400)
+      if (next !== confirm) throw new ApiError('the new passwords do not match', 400)
+      if (next === current) throw new ApiError('the new password must differ from the current one', 400)
+      return r.auth.changePassword(current, next)
+    },
+    listSessions: () => r.auth.sessions(),
+    revokeSession: (id: number) => r.auth.revokeSession(id),
+    revokeOtherSessions: () => r.auth.revokeOtherSessions(),
 
     listFindings: (filter: FindingFilter) => r.findings.list({ ...filter, query: filter.query?.trim() || undefined }),
     listComponents: (filter: ComponentFilter) => r.findings.components({ ...filter, query: filter.query?.trim() || undefined }),
@@ -32,6 +43,8 @@ export function createUseCases(r: Repositories) {
 
     listHosts: (client?: string) => r.hosts.list(client),
     revokeHost: (id: number) => r.hosts.revoke(id),
+
+    trend: (filter: TrendFilter) => r.trend.trend(filter),
 
     listClients: () => r.clients.list(),
     createClient: async (name: string) => {

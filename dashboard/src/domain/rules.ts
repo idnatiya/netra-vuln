@@ -1,4 +1,4 @@
-import type { Component, Host, Page, TriageStatus } from './models'
+import type { Component, Host, Page, TrendPoint, TriageStatus } from './models'
 
 // Pure business rules shared by views. Thresholds mirror central's domain package.
 
@@ -20,6 +20,51 @@ export function hostIssues(h: Host): string[] {
   if (h.lastScanStatus === 'error') out.push('last scan failed')
   if (h.rebootRequired) out.push('reboot required')
   if (!h.autoUpdateEnabled) out.push('auto-update off')
+  return out
+}
+
+/** The colour band of a host row: worst open severity, or none before the first successful scan. */
+export type HostLevel = 'critical' | 'high' | 'clean' | 'none'
+
+export function hostLevel(h: Host): HostLevel {
+  if (h.openCritical > 0) return 'critical'
+  if (h.openHigh > 0) return 'high'
+  return h.lastOkScanAt ? 'clean' : 'none'
+}
+
+export type HostTab = 'attention' | 'all' | 'stale' | 'revoked'
+
+/** Which hosts each tab of the hosts list shows. "attention" = active hosts with open findings or issues. */
+export function inHostTab(h: Host, tab: HostTab): boolean {
+  if (tab === 'revoked') return h.revokedAt !== null
+  if (h.revokedAt) return false
+  if (tab === 'stale') return h.staleScan || h.staleHeartbeat
+  if (tab === 'attention') return h.openCritical > 0 || h.openHigh > 0 || hostIssues(h).length > 0
+  return true
+}
+
+/** Worst first: stale, then most open critical, then most open high, then by name. */
+export function worstFirst(a: Host, b: Host): number {
+  const stale = (h: Host) => Number(h.staleScan || h.staleHeartbeat)
+  return stale(b) - stale(a) || b.openCritical - a.openCritical || b.openHigh - a.openHigh
+    || a.hostname.localeCompare(b.hostname)
+}
+
+/**
+ * One value per day for the last `days` days ending today, for sparklines. Days
+ * without a successful scan carry the previous day's value (findings stay open
+ * until a scan resolves them); days before the first point are 0.
+ */
+export function dailyTotals(points: TrendPoint[], days: number, today: Date = new Date()): number[] {
+  const key = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+  const byDay = new Map(points.map((p) => [key(p.day), p.critical + p.high]))
+  const out: number[] = []
+  let last = 0
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i)
+    last = byDay.get(key(d)) ?? last
+    out.push(last)
+  }
   return out
 }
 

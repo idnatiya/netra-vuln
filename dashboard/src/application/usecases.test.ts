@@ -5,7 +5,8 @@ import { createUseCases } from './usecases'
 
 function fakeRepos() {
   const r = {
-    auth: { login: vi.fn(), logout: vi.fn(), me: vi.fn() },
+    auth: { login: vi.fn(), logout: vi.fn(), me: vi.fn(), changePassword: vi.fn(async () => 1), sessions: vi.fn(), revokeSession: vi.fn(), revokeOtherSessions: vi.fn() },
+    trend: { trend: vi.fn() },
     findings: { list: vi.fn(), components: vi.fn(), triage: vi.fn(), triageComponent: vi.fn() },
     hosts: { list: vi.fn(), revoke: vi.fn() },
     clients: { list: vi.fn(), create: vi.fn(async () => 'tok'), setScanConfig: vi.fn(async (_n, c) => c), clearScanConfig: vi.fn() },
@@ -51,5 +52,19 @@ describe('listFindings', () => {
     const r = fakeRepos()
     await createUseCases(r).listFindings({ page: 1, pageSize: 50, query: '   ' })
     expect(r.findings.list).toHaveBeenCalledWith({ page: 1, pageSize: 50, query: undefined })
+  })
+})
+
+describe('changePassword', () => {
+  it('checks length, confirmation, and reuse before calling the server', () => {
+    const r = fakeRepos()
+    const uc = createUseCases(r)
+    expect(() => uc.changePassword('', 'long enough pass', 'long enough pass')).toThrow('current password')
+    expect(() => uc.changePassword('old', 'short', 'short')).toThrow('12-72')
+    expect(() => uc.changePassword('old', 'long enough pass', 'long enough pas')).toThrow('do not match')
+    expect(() => uc.changePassword('long enough pass', 'long enough pass', 'long enough pass')).toThrow('differ')
+    expect(r.auth.changePassword).not.toHaveBeenCalled()
+    uc.changePassword('old password', 'long enough pass', 'long enough pass')
+    expect(r.auth.changePassword).toHaveBeenCalledWith('old password', 'long enough pass')
   })
 })

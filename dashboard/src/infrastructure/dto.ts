@@ -1,5 +1,5 @@
 import type {
-  Client, Component, ComponentKind, Finding, Host, ScanConfig, Session, Severity, TriageStatus,
+  AdminSession, Client, Component, ComponentKind, Finding, Host, ScanConfig, Session, Severity, TrendPoint, TriageStatus,
 } from '@/domain/models'
 
 // Shapes returned by central's admin API (snake_case) and their mapping to domain types.
@@ -65,3 +65,12 @@ export const toComponent = (d: ComponentDTO): Component => ({
 
 export interface PageDTO<T> { items: T[], total: number, page: number, page_size: number }
 
+
+export interface TrendDTO { day: string, critical: number, high: number }
+// "2026-10-30" is a calendar day; parse it as local midnight, not UTC.
+export const toTrend = (d: TrendDTO): TrendPoint => ({ day: new Date(`${d.day}T00:00:00`), critical: d.critical, high: d.high })
+
+export interface AdminSessionDTO { id: number, created_at: string, expires_at: string, ip: string, user_agent: string, current: boolean }
+export const toAdminSession = (d: AdminSessionDTO): AdminSession => ({
+  id: d.id, createdAt: date(d.created_at), expiresAt: date(d.expires_at), ip: d.ip, userAgent: d.user_agent, current: d.current,
+})

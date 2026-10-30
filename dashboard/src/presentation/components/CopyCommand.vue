@@ -2,7 +2,6 @@
 import { Check, Copy } from '@lucide/vue'
 import { ref } from 'vue'
 import { toast } from 'vue-sonner'
-import { Button } from './ui/button'
 
 const props = defineProps<{ command: string }>()
 const copied = ref(false)
@@ -19,10 +18,16 @@ async function copy() {
 </script>
 
 <template>
-  <div class="flex items-start gap-2 rounded-md bg-muted px-3 py-2">
-    <code class="min-w-0 flex-1 font-mono text-xs leading-5 break-all select-all">{{ command }}</code>
-    <Button size="icon-sm" variant="ghost" class="-my-1 shrink-0" :aria-label="copied ? 'Copied' : 'Copy command'" @click="copy">
-      <Check v-if="copied" class="text-ok" /><Copy v-else />
-    </Button>
+  <!-- Commands keep their line breaks and scroll sideways instead of wrapping. -->
+  <div class="flex items-start gap-2 rounded-md bg-sunken px-4 py-3">
+    <code class="min-w-0 flex-1 overflow-x-auto font-mono text-[13px] leading-6 whitespace-pre select-all">{{ command }}</code>
+    <button
+      type="button"
+      class="-my-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+      :aria-label="copied ? 'Copied' : 'Copy command'"
+      @click="copy"
+    >
+      <Check v-if="copied" class="size-4 text-ok" /><Copy v-else class="size-4" />
+    </button>
   </div>
 </template>

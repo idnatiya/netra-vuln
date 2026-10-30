@@ -4,16 +4,14 @@ import type { Severity } from '@/domain/models'
 
 const props = defineProps<{ severity: Severity }>()
 const cls = computed(() => ({
-  CRITICAL: 'bg-sev-critical/12 text-sev-critical ring-sev-critical/30',
-  HIGH: 'bg-sev-high/12 text-sev-high ring-sev-high/30',
-  MEDIUM: 'bg-sev-medium/15 text-sev-medium ring-sev-medium/30',
-  LOW: 'bg-sev-low/12 text-sev-low ring-sev-low/30',
-  UNKNOWN: 'bg-sev-unknown/12 text-sev-unknown ring-sev-unknown/30',
+  CRITICAL: 'bg-sev-critical text-white',
+  HIGH: 'bg-sev-high text-ink',
+  MEDIUM: 'bg-sev-medium text-ink',
+  LOW: 'bg-sev-low text-ink',
+  UNKNOWN: 'bg-sev-unknown text-ink',
 })[props.severity])
 </script>
 
 <template>
-  <span :class="['inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-semibold tracking-wide ring-1 ring-inset', cls]">
-    {{ severity }}
-  </span>
+  <span :class="['micro-cap inline-flex items-center rounded-[4px] px-1.5', cls]">{{ severity }}</span>
 </template>

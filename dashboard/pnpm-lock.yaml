@@ -8,6 +8,12 @@ importers:
 
   .:
     dependencies:
+      '@fontsource/rubik':
+        specifier: 5.2.8
+        version: 5.2.8
+      '@fontsource/space-grotesk':
+        specifier: 5.2.10
+        version: 5.2.10
       '@lucide/vue':
         specifier: 1.55.0
         version: 1.55.0(vue@3.5.44(typescript@6.0.3))
@@ -113,6 +119,12 @@ packages:
     resolution: {integrity: sha512-043dyEKD9TDSfz080YH2vobubgg+NIo/9Fw4RAl7sEMpD8Am1DNrrSTl/GpMBjyGHoD/FbJY2QLawY+HSQsEIA==}
     peerDependencies:
       vue: '>=3.3.0'
+
+  '@fontsource/rubik@5.2.8':
+    resolution: {integrity: sha512-PIc8QR7FqWPcYhbdRiGff56vQlKqg/ytES1YqecSq1GkgxiH4TBshrFvDEOZ9JonUF9m1qQ+qXxJj7wD5zgXEw==}
+
+  '@fontsource/space-grotesk@5.2.10':
+    resolution: {integrity: sha512-XNXEbT74OIITPqw2H6HXwPDp85fy43uxfBwFR5PU+9sLnjuLj12KlhVM9nZVN6q6dlKjkuN8JisW/OBxwxgUew==}
 
   '@internationalized/date@3.12.4':
     resolution: {integrity: sha512-M1dEn4c1U1HsSlaVR8upZtSqvXrTkHDfv18H01uCSJyjVLDxnBR38v/fMxecmlwXKR4i9HeZcmgQAPE6A+aGJQ==}
@@ -1115,6 +1127,10 @@ snapshots:
       '@floating-ui/dom': 1.8.0
       '@floating-ui/utils': 0.2.12
       vue: 3.5.44(typescript@6.0.3)
+
+  '@fontsource/rubik@5.2.8': {}
+
+  '@fontsource/space-grotesk@5.2.10': {}
 
   '@internationalized/date@3.12.4':
     dependencies:

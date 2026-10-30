@@ -11,6 +11,16 @@ export interface Session {
   expiresAt: Date
 }
 
+/** One signed-in dashboard session of the current admin. */
+export interface AdminSession {
+  id: number
+  createdAt: Date
+  expiresAt: Date
+  ip: string
+  userAgent: string
+  current: boolean
+}
+
 export interface ScanConfig {
   severity?: Severity[]
   ignore_unfixed?: boolean
@@ -119,6 +129,19 @@ export interface FindingFilter {
 }
 
 export type ComponentFilter = Omit<FindingFilter, 'sort' | 'page' | 'pageSize'>
+
+/** Open critical/high on one day (last successful scan of that day, per host). */
+export interface TrendPoint {
+  day: Date
+  critical: number
+  high: number
+}
+
+export interface TrendFilter {
+  client?: string
+  hostId?: number
+  days: number
+}
 
 export interface Page<T> {
   items: T[]

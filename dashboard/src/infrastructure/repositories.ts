@@ -1,8 +1,8 @@
 import type { Repositories } from '@/application/ports'
 import type { ComponentFilter, ScanConfig } from '@/domain/models'
 import {
-  type ClientDTO, type ComponentDTO, type FindingDTO, type HostDTO, type PageDTO, type SessionDTO,
-  toClient, toComponent, toFinding, toHost, toSession,
+  type AdminSessionDTO, type ClientDTO, type ComponentDTO, type FindingDTO, type HostDTO, type PageDTO, type SessionDTO, type TrendDTO,
+  toAdminSession, toClient, toComponent, toFinding, toHost, toSession, toTrend,
 } from './dto'
 import type { HttpClient } from './http'
 
@@ -20,6 +20,15 @@ export function createHttpRepositories(http: HttpClient): Repositories {
       login: async (username, password) => toSession(await http.request<SessionDTO>('POST', '/login', { username, password })),
       logout: () => http.request<void>('POST', '/logout'),
       me: async () => toSession(await http.get<SessionDTO>('/me')),
+      changePassword: async (current, next) => (await http.request<{ count: number }>('POST', '/me/password', {
+        current_password: current, new_password: next,
+      })).count,
+      sessions: async () => (await http.get<AdminSessionDTO[]>('/me/sessions')).map(toAdminSession),
+      revokeSession: (id) => http.request<void>('DELETE', `/me/sessions/${id}`),
+      revokeOtherSessions: async () => (await http.request<{ count: number }>('DELETE', '/me/sessions')).count,
+    },
+    trend: {
+      trend: async (f) => (await http.get<TrendDTO[]>('/trend', { client: f.client, host_id: f.hostId, days: f.days })).map(toTrend),
     },
     findings: {
       list: async (f) => {

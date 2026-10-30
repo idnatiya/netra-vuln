@@ -11,6 +11,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@fontsource/rubik": "5.2.8",
+    "@fontsource/space-grotesk": "5.2.10",
     "@lucide/vue": "1.55.0",
     "@tanstack/vue-query": "5.104.5",
     "@vueuse/core": "15.0.0",

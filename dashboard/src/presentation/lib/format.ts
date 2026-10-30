@@ -28,3 +28,18 @@ export function plural(n: number, word: string): string {
 export function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
+
+/** Advisory page for a CVE or GitHub advisory id. */
+export function advisoryUrl(id: string): string {
+  return id.startsWith('GHSA-') ? `https://github.com/advisories/${id}` : `https://avd.aquasec.com/nvd/${id.toLowerCase()}`
+}
+
+/** "Chrome on macOS" from a User-Agent header; the raw string when nothing matches. */
+export function describeUserAgent(ua: string): string {
+  if (!ua) return 'Unknown device'
+  const pick = (pairs: [string, string][]) => pairs.find(([m]) => ua.includes(m))?.[1]
+  const browser = pick([['Edg/', 'Edge'], ['Firefox/', 'Firefox'], ['Chrome/', 'Chrome'], ['Safari/', 'Safari'], ['curl/', 'curl']])
+  const os = pick([['iPhone', 'iPhone'], ['iPad', 'iPad'], ['Android', 'Android'], ['Mac OS X', 'macOS'], ['Windows', 'Windows'], ['Linux', 'Linux']])
+  if (!browser) return ua.slice(0, 60)
+  return os ? `${browser} on ${os}` : browser
+}
