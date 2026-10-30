@@ -14,11 +14,11 @@
   "rtl": false,
   "pointer": false,
   "aliases": {
-    "components": "@/presentation/components",
-    "utils": "@/presentation/lib/utils",
-    "ui": "@/presentation/components/ui",
-    "lib": "@/presentation/lib",
-    "composables": "@/presentation/composables"
+    "components": "@/components",
+    "utils": "@/lib/utils",
+    "ui": "@/components/ui",
+    "lib": "@/lib",
+    "composables": "@/composables"
   },
   "registries": {}
 }
