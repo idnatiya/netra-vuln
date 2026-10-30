@@ -50,7 +50,7 @@ mysql-up: ## Start the dev/test MySQL on 127.0.0.1:3317
 
 # Fixed output path so the macOS firewall approval sticks (go run uses a new temp path each time).
 dist/central: FORCE
-	@go build -o dist/central ./central/cmd/central
+	@go build -o dist/central ./core/cmd/central
 
 central: dist/central ## Admin CLI on the dev DB, e.g. make central ARGS="client create acme"
 	CENTRAL_DSN='$(CENTRAL_DSN)' dist/central $(ARGS)
@@ -75,7 +75,7 @@ dashboard-test: dashboard-deps ## Dashboard unit tests + typecheck
 
 # --- Tests & builds ----------------------------------------------------------
 
-test: dashboard-test mysql-up ## Dashboard tests + Go vet + Go tests (central/test against the dev MySQL)
+test: dashboard-test mysql-up ## Dashboard tests + Go vet + Go tests (core/test against the dev MySQL)
 	go vet ./...
 	TEST_MYSQL_DSN='$(TEST_MYSQL_DSN)' go test -count=1 ./...
 

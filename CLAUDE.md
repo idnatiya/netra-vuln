@@ -31,7 +31,7 @@ Work in phases (see "Phases"). At the end of each phase, stop and show the resul
 ## Repo Layout
 Go module `netra-vuln` (requires `github.com/idnatiya/netra-vuln-agent` for the contract).
 ```
-/central      # central API Go code (cmd, db/migrations, internal, test)
+/core         # central API Go code (cmd, db/migrations, internal, test)
 /deploy
   /central    # docker-compose.yml, Dockerfiles, Caddyfile, backup.sh, .env.example
   /dev        # mysql.compose.yml for make dev / tests
@@ -62,11 +62,11 @@ Admin CLI (subcommands of the central binary, not public endpoints):
 - `central client set-config <name> <file.json|->` / `central client set-config -clear <name>` / `central client list`
 - `central host list [-client <name>]`
 - `central host revoke <hostname> [-client <name>]`
-- `central migrate`, `central serve` (env `CENTRAL_DSN`, `CENTRAL_ADDR`, `CENTRAL_TRUST_PROXY`, `CENTRAL_LOG_LEVEL`; or `config.json` in `./` or `./central`, env wins)
+- `central migrate`, `central serve` (env `CENTRAL_DSN`, `CENTRAL_ADDR`, `CENTRAL_TRUST_PROXY`, `CENTRAL_LOG_LEVEL`; or `config.json` in `./` or `./core`, env wins)
 
 Status codes matter to the agent: 400/413/422 = permanent reject (agent drops the report); 401/403/409/429/5xx = retried or spooled.
 
-Code layout follows khannedy/golang-clean-architecture under `central/`:
+Code layout follows khannedy/golang-clean-architecture under `core/`:
 ```
 cmd/central/main.go      # CLI subcommands; serve = NewViper > NewLogger > NewDatabase > NewValidator > NewFiber > Bootstrap
 config.json              # dev defaults (env overrides)
@@ -118,7 +118,7 @@ Rules:
 - "Open" = `resolved_at IS NULL AND status = 'open'`. Triage (`accepted` / `false_positive`) needs a note and survives re-scans; it never deletes data.
 - Auth: `admin_users` (bcrypt) + `admin_sessions` (SHA-256 token hash, 12h, plus login IP and User-Agent for the Account page). Cookie `vuln_session`: HttpOnly, Secure, SameSite=Strict, Path=/api/admin. State-changing requests must send a same-origin `Origin` (CSRF). Login limited per client IP; behind Caddy set `CENTRAL_TRUST_PROXY=true`.
 - Admins are created with the CLI only: `central admin create|passwd|list` (no sign-up).
-- Admin API JSON shapes live in `central/internal/model` (not part of the agent contract in the agent module's `wire`); the dashboard's `infrastructure/http.ts` unwraps `data` and reads `paging` / `errors`.
+- Admin API JSON shapes live in `core/internal/model` (not part of the agent contract in the agent module's `wire`); the dashboard's `infrastructure/http.ts` unwraps `data` and reads `paging` / `errors`.
 - Dashboard structure: `src/domain` (types + pure rules) <- `src/application` (ports + use cases) <- `src/infrastructure` (fetch + DTO mapping) / `src/presentation` (views, vue-query composables, shadcn `components/ui`); `src/di.ts` is the composition root. Views never call `fetch`.
 - Production CSP is `default-src 'self'`: no remote fonts/scripts/styles (a vitest guard checks `style.css`).
 
@@ -132,7 +132,7 @@ Rules:
 - GitLab CI: lint, test, build; central image to the GitLab Container Registry (agent packaging and CI live in the agent repo)
 
 ## Testing
-- All Go tests live in `central/test/` (package `test`, black-box, testify): requests go through the Fiber app (`app.Test`) into real MySQL; no fakes. `ClearAll` empties the tables per test; tests change timestamps in the DB instead of injecting a clock.
+- All Go tests live in `core/test/` (package `test`, black-box, testify): requests go through the Fiber app (`app.Test`) into real MySQL; no fakes. `ClearAll` empties the tables per test; tests change timestamps in the DB instead of injecting a clock.
 - Cover ingest logic (new finding, still present, resolved, reappeared, scan error), agent status codes and contract (strict decode of responses), tenant isolation (client A token rejected for client B), admin auth/session/CSRF, dashboard queries, and the pure entity rules
 
 ## Documentation (`/docs`)
