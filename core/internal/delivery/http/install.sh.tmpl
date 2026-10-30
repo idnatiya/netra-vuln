@@ -1,0 +1,24 @@
+#!/bin/sh
+# netra-vuln agent installer, served by central ({{.URL}}). Run on the VM:
+#   export VULN_AGENT_ENROLL_TOKEN=<enroll token>
+#   curl -fsSL {{.URL}}/install.sh | sudo --preserve-env=VULN_AGENT_ENROLL_TOKEN sh -s -- <client>
+# It downloads vuln-agent {{.Version}} from GitHub, checks it against SHA256SUMS,
+# and runs `vuln-agent install`, which enrolls with the token from the environment.
+set -eu
+client=${1:?usage: sh install.sh <client>}
+[ "$(id -u)" -eq 0 ] || { echo "install.sh: run as root (sudo)" >&2; exit 1; }
+case $(uname -m) in
+x86_64 | amd64) a=amd64 ;;
+aarch64 | arm64) a=arm64 ;;
+*) echo "install.sh: unsupported arch $(uname -m)" >&2; exit 1 ;;
+esac
+u='https://github.com/idnatiya/netra-vuln-agent/releases/download/{{.Version}}'
+# Not /tmp: it is often mounted noexec.
+mkdir -p /opt/vuln-agent
+d=$(mktemp -d /opt/vuln-agent/install.XXXXXX)
+trap 'rm -rf "$d"' EXIT
+cd "$d"
+curl -fsSLO "$u/vuln-agent-linux-$a" -fsSLO "$u/SHA256SUMS"
+grep " vuln-agent-linux-$a\$" SHA256SUMS | sha256sum -c -
+chmod +x "vuln-agent-linux-$a"
+"./vuln-agent-linux-$a" install -central-url '{{.URL}}' -client-id "$client"

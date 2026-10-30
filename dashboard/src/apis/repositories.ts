@@ -54,6 +54,12 @@ export function createHttpRepositories(http: HttpClient): Repositories {
       setScanConfig: (name, cfg) =>
         http.request<ScanConfig>('PUT', `/clients/${encodeURIComponent(name)}/scan-config`, cfg),
       clearScanConfig: (name) => http.request<void>('DELETE', `/clients/${encodeURIComponent(name)}/scan-config`),
+      rotateEnrollToken: async (name) =>
+        (await http.request<{ enroll_token: string }>('POST', `/clients/${encodeURIComponent(name)}/enroll-token`)).enroll_token,
+      installInfo: async () => {
+        const i = await http.get<{ enabled: boolean, public_url: string, agent_version: string }>('/install')
+        return { enabled: i.enabled, publicUrl: i.public_url, agentVersion: i.agent_version }
+      },
     },
   }
 }

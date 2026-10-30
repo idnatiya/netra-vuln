@@ -3,8 +3,10 @@ TEST_MYSQL_DSN ?= root:test@tcp(127.0.0.1:3317)/
 CENTRAL_DSN ?= root:test@tcp(127.0.0.1:3317)/vuln
 # The laptop's Tailscale IP when available (so tailnet VMs can report), else local only.
 # Uncommon port: 8080/8090 are often taken by other projects.
-CENTRAL_ADDR ?= $(or $(shell tailscale ip -4 2>/dev/null | head -1),127.0.0.1):18080
+CENTRAL_ADDR ?= $(or $(shell ip=$$(tailscale ip -4 2>/dev/null) && printf '%s\n' "$$ip" | awk 'NR == 1 && /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$$/ { print; exit }'),127.0.0.1):18080
 DEV_ADMIN_USER ?= admin
+# Agent release that the dev /install.sh downloads.
+CENTRAL_AGENT_VERSION ?= v0.2.0
 DEV_ADMIN_PASSWORD_FILE := dev-out/admin-password
 
 .DEFAULT_GOAL := help
@@ -20,13 +22,14 @@ dev: mysql-up dist/central dashboard-deps ## Run MySQL + central + dashboard tog
 	@CENTRAL_DSN='$(CENTRAL_DSN)' dist/central migrate
 	@$(MAKE) --no-print-directory dev-admin
 	@echo ""
-	@echo "  dashboard  http://localhost:5173   (user: $(DEV_ADMIN_USER), password: $(DEV_ADMIN_PASSWORD_FILE))"
+	@echo "  dashboard  http://localhost:11270   (user: $(DEV_ADMIN_USER), password: $(DEV_ADMIN_PASSWORD_FILE))"
 	@echo "  central    http://$(CENTRAL_ADDR)   (agents: central_url)"
 	@echo ""
 	@# Stop both when either exits (e.g. central cannot bind its port), so the
 	@# dashboard never keeps proxying to whatever else owns that port.
 	@stopped=; trap 'stopped=1' INT TERM; trap 'kill $$(jobs -p) 2>/dev/null' EXIT; \
-	CENTRAL_DSN='$(CENTRAL_DSN)' CENTRAL_ADDR='$(CENTRAL_ADDR)' dist/central serve & c=$$!; \
+	CENTRAL_DSN='$(CENTRAL_DSN)' CENTRAL_ADDR='$(CENTRAL_ADDR)' CENTRAL_PUBLIC_URL='http://$(CENTRAL_ADDR)' \
+	CENTRAL_AGENT_VERSION='$(CENTRAL_AGENT_VERSION)' dist/central serve & c=$$!; \
 	CENTRAL_DEV_URL='http://$(CENTRAL_ADDR)' pnpm -C dashboard dev & v=$$!; \
 	while [ -z "$$stopped" ] && kill -0 $$c 2>/dev/null && kill -0 $$v 2>/dev/null; do sleep 1; done; \
 	[ -n "$$stopped" ] && { echo "stopped"; exit 0; }; \

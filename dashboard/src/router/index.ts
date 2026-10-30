@@ -16,6 +16,7 @@ export function createAppRouter(uc: UseCases) {
           { path: 'hosts', redirect: '/' },
           { path: 'findings', name: 'findings', component: () => import('../pages/FindingsView.vue'), meta: { title: 'Search CVEs' } },
           { path: 'account', name: 'account', component: () => import('../pages/AccountView.vue'), meta: { title: 'Account' } },
+          { path: 'agents/new', name: 'add-agent', component: () => import('../pages/AddAgentView.vue'), meta: { title: 'Add agent' } },
           { path: 'clients', name: 'clients', component: () => import('../pages/ClientsView.vue'), meta: { title: 'Clients' } },
         ],
       },

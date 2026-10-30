@@ -35,6 +35,7 @@ type RouteConfig struct {
 	HostController      *http.HostController
 	FindingController   *http.FindingController
 	DashboardController *http.DashboardController
+	InstallController   *http.InstallController
 	HostAuthMiddleware  fiber.Handler
 	AuthMiddleware      fiber.Handler
 }
@@ -49,6 +50,7 @@ func (c *RouteConfig) Setup() {
 func (c *RouteConfig) SetupAgentRoute() {
 	l := c.Limits
 	c.App.Get("/healthz", c.AgentController.Health)
+	c.App.Get("/install.sh", middleware.NewRateLimit(l.AuthMax, l.Window, middleware.ConstKey("auth")), c.InstallController.Script)
 	c.App.Post("/api/v1/enroll", middleware.NewRateLimit(l.EnrollMax, l.Window, middleware.ConstKey("enroll")),
 		middleware.NewSmallBody(), c.AgentController.Enroll)
 
@@ -87,6 +89,8 @@ func (c *RouteConfig) SetupAdminAuthRoute() {
 	admin.Post("/clients", c.ClientController.Create)
 	admin.Put("/clients/:name/scan-config", c.ClientController.SetScanConfig)
 	admin.Delete("/clients/:name/scan-config", c.ClientController.ClearScanConfig)
+	admin.Post("/clients/:name/enroll-token", c.ClientController.RotateEnrollToken)
+	admin.Get("/install", c.InstallController.Get)
 
 	admin.Get("/hosts", c.HostController.List)
 	admin.Post("/hosts/:id/revoke", c.HostController.Revoke)

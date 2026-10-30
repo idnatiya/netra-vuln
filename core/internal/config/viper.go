@@ -17,6 +17,8 @@ import (
 //	CENTRAL_ADDR         web.addr
 //	CENTRAL_TRUST_PROXY  web.trust_proxy
 //	CENTRAL_LOG_LEVEL    log.level (logrus level, 4 = info)
+//	CENTRAL_PUBLIC_URL     web.public_url (URL VMs use to reach central; enables /install.sh)
+//	CENTRAL_AGENT_VERSION  agent.version (agent release tag /install.sh downloads)
 func NewViper() *viper.Viper {
 	config := viper.New()
 	config.SetConfigName("config")
@@ -37,6 +39,8 @@ func NewViper() *viper.Viper {
 		"web.addr":        "CENTRAL_ADDR",
 		"web.trust_proxy": "CENTRAL_TRUST_PROXY",
 		"log.level":       "CENTRAL_LOG_LEVEL",
+		"web.public_url":  "CENTRAL_PUBLIC_URL",
+		"agent.version":   "CENTRAL_AGENT_VERSION",
 	} {
 		_ = config.BindEnv(key, env)
 	}

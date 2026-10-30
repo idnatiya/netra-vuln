@@ -49,3 +49,18 @@ type OverviewResponse struct {
 	Totals  TotalsResponse   `json:"totals"`
 	Clients []ClientResponse `json:"clients"`
 }
+
+type RotateEnrollTokenRequest struct {
+	Name string `validate:"required,max=64"`
+}
+
+type EnrollTokenResponse struct {
+	EnrollToken string `json:"enroll_token"` // shown once
+}
+
+// InstallInfoResponse tells the dashboard how to build the one-line install command.
+type InstallInfoResponse struct {
+	Enabled      bool   `json:"enabled"`
+	PublicURL    string `json:"public_url"`
+	AgentVersion string `json:"agent_version"`
+}

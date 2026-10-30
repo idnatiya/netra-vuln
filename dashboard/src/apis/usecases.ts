@@ -47,6 +47,8 @@ export function createUseCases(r: Repositories) {
     trend: (filter: TrendFilter) => r.trend.trend(filter),
 
     listClients: () => r.clients.list(),
+    rotateEnrollToken: (name: string) => r.clients.rotateEnrollToken(name),
+    installInfo: () => r.clients.installInfo(),
     createClient: async (name: string) => {
       const n = name.trim()
       if (!isValidClientName(n)) {

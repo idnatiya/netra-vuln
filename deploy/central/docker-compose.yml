@@ -46,6 +46,9 @@ services:
       <<: *central_env
       CENTRAL_ADDR: ":8080"
       CENTRAL_TRUST_PROXY: "true"
+      # /install.sh (dashboard: Add agent) needs both; empty version = disabled.
+      CENTRAL_PUBLIC_URL: ${CENTRAL_PUBLIC_URL:-https://${CENTRAL_DOMAIN}}
+      CENTRAL_AGENT_VERSION: ${CENTRAL_AGENT_VERSION:-}
     depends_on:
       migrate:
         condition: service_completed_successfully

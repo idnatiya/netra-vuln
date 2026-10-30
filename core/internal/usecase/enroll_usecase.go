@@ -53,12 +53,12 @@ func (c *EnrollUseCase) Enroll(ctx context.Context, request *wire.EnrollRequest)
 		c.Log.Warnf("Failed find client : %+v", err)
 		return nil, fiber.ErrInternalServerError
 	}
-	valid, err := c.EnrollTokenRepository.CountValid(tx, client.ID, HashToken(request.EnrollToken))
+	valid, err := c.EnrollTokenRepository.Consume(tx, client.ID, HashToken(request.EnrollToken), now())
 	if err != nil {
 		c.Log.Warnf("Failed check enroll token : %+v", err)
 		return nil, fiber.ErrInternalServerError
 	}
-	if valid == 0 {
+	if !valid {
 		return nil, fiber.ErrUnauthorized
 	}
 

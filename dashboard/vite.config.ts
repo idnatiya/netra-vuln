@@ -13,7 +13,7 @@ export default defineConfig({
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
   server: {
-    port: 5173,
+    port: 11270,
     strictPort: true,
     // Keep the browser's Host so central's same-origin check matches the Origin header.
     proxy: { '/api': { target: central, changeOrigin: false } },

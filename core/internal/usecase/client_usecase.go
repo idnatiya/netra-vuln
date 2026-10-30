@@ -59,6 +59,35 @@ func (c *ClientUseCase) Create(ctx context.Context, request *model.CreateClientR
 	return &model.CreateClientResponse{Name: client.Name, EnrollToken: token}, nil
 }
 
+// RotateEnrollToken issues an independent single-use enrollment token.
+func (c *ClientUseCase) RotateEnrollToken(ctx context.Context, request *model.RotateEnrollTokenRequest) (*model.EnrollTokenResponse, error) {
+	if err := c.Validate.Struct(request); err != nil {
+		return nil, invalid(err)
+	}
+	tx := c.DB.WithContext(ctx).Begin()
+	defer tx.Rollback()
+
+	client := new(entity.Client)
+	if err := c.ClientRepository.FindByName(tx, client, request.Name); err != nil {
+		if isNotFound(err) {
+			return nil, fiber.NewError(fiber.StatusNotFound, fmt.Sprintf("client %q not found", request.Name))
+		}
+		c.Log.Warnf("Failed find client : %+v", err)
+		return nil, fiber.ErrInternalServerError
+	}
+	t := now()
+	token, hash := NewToken()
+	if err := c.EnrollTokenRepository.Create(tx, &entity.EnrollToken{ClientID: client.ID, TokenHash: hash, CreatedAt: t}); err != nil {
+		c.Log.Warnf("Failed create enroll token : %+v", err)
+		return nil, fiber.ErrInternalServerError
+	}
+	if err := tx.Commit().Error; err != nil {
+		c.Log.Warnf("Failed commit transaction : %+v", err)
+		return nil, fiber.ErrInternalServerError
+	}
+	return &model.EnrollTokenResponse{EnrollToken: token}, nil
+}
+
 // List returns every client with its active hosts and open-finding counts.
 func (c *ClientUseCase) List(ctx context.Context) ([]model.ClientResponse, error) {
 	ov, err := buildOverview(c.DB.WithContext(ctx), c.ClientRepository, c.HostRepository, "")

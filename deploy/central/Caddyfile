@@ -17,8 +17,8 @@
 
 	# route keeps these blocks in the written order (plain handle blocks get re-sorted).
 	route {
-		# Agents: enroll, heartbeat, config, report. Open to all VMs.
-		@agent path /api/v1/* /healthz
+		# Agents: enroll, heartbeat, config, report, and the installer. Open to all VMs.
+		@agent path /api/v1/* /healthz /install.sh
 		handle @agent {
 			reverse_proxy central:8080
 		}

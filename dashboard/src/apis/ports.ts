@@ -36,6 +36,9 @@ export interface ClientsRepository {
   create(name: string): Promise<string>
   setScanConfig(name: string, cfg: ScanConfig): Promise<ScanConfig>
   clearScanConfig(name: string): Promise<void>
+  /** Revokes the client's enroll tokens and returns a new one (shown once). */
+  rotateEnrollToken(name: string): Promise<string>
+  installInfo(): Promise<{ enabled: boolean, publicUrl: string, agentVersion: string }>
 }
 
 export interface TrendRepository {

@@ -40,6 +40,17 @@ func (c *ClientController) Create(ctx fiber.Ctx) error {
 	return ctx.Status(fiber.StatusCreated).JSON(model.WebResponse[*model.CreateClientResponse]{Data: response})
 }
 
+// RotateEnrollToken issues a new enroll token (shown once) and revokes the old ones.
+func (c *ClientController) RotateEnrollToken(ctx fiber.Ctx) error {
+	name := ctx.Params("name")
+	response, err := c.UseCase.RotateEnrollToken(ctx.Context(), &model.RotateEnrollTokenRequest{Name: name})
+	if err != nil {
+		return err
+	}
+	c.Log.WithFields(logrus.Fields{"client": name, "by": middleware.GetAuth(ctx).Username}).Info("Enroll token rotated")
+	return ctx.JSON(model.WebResponse[*model.EnrollTokenResponse]{Data: response})
+}
+
 // SetScanConfig validates the body as wire.ScanConfig (the fields and values
 // the agent accepts) and returns the normalized JSON that was stored.
 func (c *ClientController) SetScanConfig(ctx fiber.Ctx) error {

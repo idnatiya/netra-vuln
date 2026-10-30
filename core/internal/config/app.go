@@ -68,6 +68,7 @@ func Bootstrap(config *BootstrapConfig) *UseCases {
 	hostController := http.NewHostController(uc.Host, config.Log)
 	findingController := http.NewFindingController(uc.Finding, config.Log)
 	dashboardController := http.NewDashboardController(uc.Dashboard, config.Log)
+	installController := http.NewInstallController(config.Config.GetString("web.public_url"), config.Config.GetString("agent.version"), config.Log)
 
 	// setup middleware
 	hostAuthMiddleware := middleware.NewHostAuth(uc.Agent)
@@ -86,6 +87,7 @@ func Bootstrap(config *BootstrapConfig) *UseCases {
 		HostController:      hostController,
 		FindingController:   findingController,
 		DashboardController: dashboardController,
+		InstallController:   installController,
 		HostAuthMiddleware:  hostAuthMiddleware,
 		AuthMiddleware:      authMiddleware,
 	}

@@ -55,6 +55,7 @@ const level = (c: Client) => (c.openCritical > 0 ? 'critical' : c.openHigh > 0 ?
         </div>
       </div>
       <div class="flex gap-2 border-t px-4 py-3">
+        <RouterLink :to="{ name: 'add-agent', query: { client: c.name } }" class="inline-flex items-center px-2 underline">Add agent</RouterLink>
         <Button variant="outline" @click="editing = c"><SlidersHorizontal /> Scan config</Button>
       </div>
     </div>
