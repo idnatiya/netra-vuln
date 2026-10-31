@@ -96,8 +96,9 @@ func Bootstrap(config *BootstrapConfig) *UseCases {
 		HostAuthMiddleware:  hostAuthMiddleware,
 		AuthMiddleware:      authMiddleware,
 		McpTokenController:  http.NewMcpTokenController(uc.McpToken, config.Log),
-		McpServer:           mcp.NewServer(&mcp.UseCases{Client: uc.Client, Host: uc.Host, Finding: uc.Finding}, config.Config.GetString("app.version")),
+		McpHandler:          mcp.NewHandler(&mcp.UseCases{Client: uc.Client, Host: uc.Host, Finding: uc.Finding}, config.Log, config.Config.GetString("app.version")),
 		McpAuthMiddleware:   mcpAuthMiddleware,
+		Log:                 config.Log,
 	}
 	routeConfig.Setup()
 	return uc

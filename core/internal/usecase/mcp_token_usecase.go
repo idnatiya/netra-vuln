@@ -38,7 +38,7 @@ func (c *McpTokenUseCase) Create(ctx context.Context, auth *model.Auth, request 
 		return nil, invalid(err)
 	}
 	token, hash := NewToken()
-	t := &entity.McpToken{UserID: auth.UserID, Name: request.Name, TokenHash: hash, CreatedAt: now()}
+	t := &entity.McpToken{UserID: auth.UserID, Name: request.Name, TokenHash: hash, CanTriage: request.CanTriage, CreatedAt: now()}
 	if err := c.DB.WithContext(ctx).Omit("User").Create(t).Error; err != nil {
 		c.Log.Warnf("Failed create mcp token : %+v", err)
 		return nil, fiber.ErrInternalServerError
@@ -90,5 +90,5 @@ func (c *McpTokenUseCase) Verify(ctx context.Context, token string) (*model.Auth
 			c.Log.Warnf("Failed touch mcp token : %+v", err)
 		}
 	}
-	return &model.Auth{UserID: t.UserID, Username: t.User.Username}, nil
+	return &model.Auth{UserID: t.UserID, Username: t.User.Username, McpTokenName: t.Name, CanTriage: t.CanTriage}, nil
 }

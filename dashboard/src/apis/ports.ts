@@ -17,7 +17,7 @@ export interface AuthRepository {
   revokeOtherSessions(): Promise<number>
   mcpTokens(): Promise<McpToken[]>
   /** Returns the new token with its plaintext value (shown once). */
-  createMcpToken(name: string): Promise<McpToken & { token: string }>
+  createMcpToken(name: string, canTriage: boolean): Promise<McpToken & { token: string }>
   revokeMcpToken(id: number): Promise<void>
 }
 

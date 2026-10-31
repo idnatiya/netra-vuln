@@ -150,5 +150,5 @@ func AdminUserToResponse(u entity.AdminUser) model.AdminUserResponse {
 }
 
 func McpTokenToResponse(t entity.McpToken) model.McpTokenResponse {
-	return model.McpTokenResponse{ID: t.ID, Name: t.Name, CreatedAt: t.CreatedAt, LastUsedAt: t.LastUsedAt}
+	return model.McpTokenResponse{ID: t.ID, Name: t.Name, CanTriage: t.CanTriage, CreatedAt: t.CreatedAt, LastUsedAt: t.LastUsedAt}
 }

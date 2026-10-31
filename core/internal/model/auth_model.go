@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 // Auth is the signed-in admin, set in Locals by the session middleware.
 type Auth struct {
@@ -8,6 +11,21 @@ type Auth struct {
 	UserID    int64
 	Username  string
 	ExpiresAt time.Time
+	// Set for MCP requests only.
+	McpTokenName string
+	CanTriage    bool
+}
+
+type authKey struct{}
+
+// ContextWithAuth / AuthFromContext carry the admin into net/http handlers (MCP).
+func ContextWithAuth(ctx context.Context, auth *Auth) context.Context {
+	return context.WithValue(ctx, authKey{}, auth)
+}
+
+func AuthFromContext(ctx context.Context) *Auth {
+	auth, _ := ctx.Value(authKey{}).(*Auth)
+	return auth
 }
 
 type LoginUserRequest struct {
@@ -54,12 +72,14 @@ type AdminUserResponse struct {
 }
 
 type CreateMcpTokenRequest struct {
-	Name string `json:"name" validate:"required,max=64"`
+	Name      string `json:"name" validate:"required,max=64"`
+	CanTriage bool   `json:"can_triage"`
 }
 
 type McpTokenResponse struct {
 	ID         int64      `json:"id"`
 	Name       string     `json:"name"`
+	CanTriage  bool       `json:"can_triage"`
 	CreatedAt  time.Time  `json:"created_at"`
 	LastUsedAt *time.Time `json:"last_used_at"`
 }

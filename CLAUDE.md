@@ -126,8 +126,8 @@ Rules:
 
 ## MCP
 - `/mcp` is a read-only MCP server (Streamable HTTP, stateless, JSON responses; official `github.com/modelcontextprotocol/go-sdk`) in `core/internal/delivery/mcp`. Tools `list_clients`, `list_hosts`, `search_findings` (25/page), `host_components` call the same use cases as the admin API and return its models.
-- Auth: `Authorization: Bearer <mcp token>` (`mcp_tokens`, SHA-256 hash, bound to the admin who created it, `last_used_at` at most once a minute, revoke = `revoked_at`). Rate limited per admin. Caddy serves `/mcp` behind `ADMIN_ALLOW_CIDRS`.
-- No write tools (triage) and no LLM calls inside central.
+- Auth: `Authorization: Bearer <mcp token>` (`mcp_tokens`, SHA-256 hash, bound to the admin who created it, `last_used_at` at most once a minute, revoke = `revoked_at`). Own rate limit (`Limits.McpMax`, default 600/min per admin and in total), separate from the agent limits; hits are logged (`MCP rate limited`). `search_findings` takes `page_size` 1-100 (default 25). Caddy serves `/mcp` behind `ADMIN_ALLOW_CIDRS`.
+- Tokens are read-only unless created with "Allow triage" (`mcp_tokens.can_triage`): only then `triage_finding` / `triage_component` are listed (destructive hint, so clients confirm). Their notes get `[via MCP: <token name>]` and central logs each verdict. The server is built per request from the token's `Auth`. No LLM calls inside central.
 
 ## Deployment
 - `deploy/central/docker-compose.yml`: `mysql` (named volume), `migrate` (one-shot `central migrate`), `central` (distroless, healthcheck `central healthcheck`), `caddy` (automatic HTTPS, serves the dashboard SPA, proxies `/api/*`; optional `ADMIN_ALLOW_CIDRS` for the dashboard), `backup` (daily `mysqldump` into `./backups`, `BACKUP_KEEP_DAYS`). Configure via `.env` (from `.env.example`); first admin: `docker compose exec central central admin create <name>`. `.dockerignore` keeps `dev-out/` and other local data out of the build context.

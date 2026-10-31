@@ -27,8 +27,8 @@ export function createHttpRepositories(http: HttpClient): Repositories {
       revokeSession: (id) => http.request<void>('DELETE', `/me/sessions/${id}`),
       revokeOtherSessions: async () => (await http.request<{ count: number }>('DELETE', '/me/sessions')).count,
       mcpTokens: async () => (await http.get<McpTokenDTO[]>('/mcp-tokens')).map(toMcpToken),
-      createMcpToken: async (name) => {
-        const d = await http.request<McpTokenDTO & { token: string }>('POST', '/mcp-tokens', { name })
+      createMcpToken: async (name, canTriage) => {
+        const d = await http.request<McpTokenDTO & { token: string }>('POST', '/mcp-tokens', { name, can_triage: canTriage })
         return { ...toMcpToken(d), token: d.token }
       },
       revokeMcpToken: (id) => http.request<void>('DELETE', `/mcp-tokens/${id}`),

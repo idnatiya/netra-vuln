@@ -17,6 +17,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/limiter"
+	"github.com/sirupsen/logrus"
 
 	"netra-vuln/core/internal/entity"
 	"netra-vuln/core/internal/model"
@@ -180,8 +181,25 @@ func NewMcpAuth(mcpTokenUseCase *usecase.McpTokenUseCase) fiber.Handler {
 			return err
 		}
 		ctx.Locals(authKey, auth)
+		ctx.SetContext(model.ContextWithAuth(ctx.Context(), auth))
 		return ctx.Next()
 	}
 }
 
 func UserKey(ctx fiber.Ctx) string { return "mcp:" + strconv.FormatInt(GetAuth(ctx).UserID, 10) }
+
+// NewMcpRateLimit caps MCP calls per admin and logs when an AI client hits it
+// (Retry-After is set by the limiter).
+func NewMcpRateLimit(max int, window time.Duration, log *logrus.Logger) fiber.Handler {
+	return limiter.New(limiter.Config{
+		Max:               max,
+		Expiration:        window,
+		KeyGenerator:      UserKey,
+		LimiterMiddleware: limiter.SlidingWindow{},
+		LimitReached: func(ctx fiber.Ctx) error {
+			auth := GetAuth(ctx)
+			log.WithFields(logrus.Fields{"by": auth.Username, "token": auth.McpTokenName}).Warn("MCP rate limited")
+			return fiber.NewError(fiber.StatusTooManyRequests, "rate limited: wait for Retry-After seconds, then use page_size 100 and filters to make fewer calls")
+		},
+	})
+}

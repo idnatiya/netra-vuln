@@ -25,6 +25,8 @@ export interface AdminSession {
 export interface McpToken {
   id: number
   name: string
+  /** Can accept / dismiss / reopen findings, not only read. */
+  canTriage: boolean
   createdAt: Date
   lastUsedAt?: Date
 }

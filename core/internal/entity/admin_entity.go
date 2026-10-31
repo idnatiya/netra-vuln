@@ -48,6 +48,7 @@ type McpToken struct {
 	UserID     int64      `gorm:"column:user_id"`
 	Name       string     `gorm:"column:name"`
 	TokenHash  []byte     `gorm:"column:token_hash"`
+	CanTriage  bool       `gorm:"column:can_triage"`
 	CreatedAt  time.Time  `gorm:"column:created_at"`
 	LastUsedAt *time.Time `gorm:"column:last_used_at"`
 	RevokedAt  *time.Time `gorm:"column:revoked_at"`

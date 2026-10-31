@@ -74,7 +74,7 @@ export const toAdminSession = (d: AdminSessionDTO): AdminSession => ({
   id: d.id, createdAt: date(d.created_at), expiresAt: date(d.expires_at), ip: d.ip, userAgent: d.user_agent, current: d.current,
 })
 
-export interface McpTokenDTO { id: number, name: string, created_at: string, last_used_at: string | null }
+export interface McpTokenDTO { id: number, name: string, can_triage: boolean, created_at: string, last_used_at: string | null }
 export const toMcpToken = (d: McpTokenDTO): McpToken => ({
-  id: d.id, name: d.name, createdAt: date(d.created_at), lastUsedAt: d.last_used_at ? date(d.last_used_at) : undefined,
+  id: d.id, name: d.name, canTriage: d.can_triage, createdAt: date(d.created_at), lastUsedAt: d.last_used_at ? date(d.last_used_at) : undefined,
 })

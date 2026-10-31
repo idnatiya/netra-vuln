@@ -6,14 +6,20 @@ package mcp
 import (
 	"context"
 	"net/http"
+	"strings"
 
+	"github.com/gofiber/fiber/v3/middleware/adaptor"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/sirupsen/logrus"
 
 	"netra-vuln/core/internal/model"
 	"netra-vuln/core/internal/usecase"
 )
 
-const pageSize = 25
+const (
+	defaultPageSize = 25
+	maxPageSize     = 100
+)
 
 type UseCases struct {
 	Client  *usecase.ClientUseCase
@@ -40,7 +46,8 @@ type FindingsIn struct {
 	Status          string `json:"status,omitempty" jsonschema:"triage status: open, accepted or false_positive; empty = any"`
 	Query           string `json:"query,omitempty" jsonschema:"substring of a CVE id or package name"`
 	IncludeResolved bool   `json:"include_resolved,omitempty" jsonschema:"also return findings no longer seen by the last scan"`
-	Page            int    `json:"page,omitempty" jsonschema:"1-based page, 25 findings per page"`
+	Page            int    `json:"page,omitempty" jsonschema:"1-based page"`
+	PageSize        int    `json:"page_size,omitempty" jsonschema:"findings per page, 1-100 (default 25); use 100 to page through a large host"`
 }
 
 type FindingsOut struct {
@@ -57,12 +64,41 @@ type ComponentsOut struct {
 	Components []model.ComponentResponse `json:"components"`
 }
 
-// NewServer registers the read-only tools.
-func NewServer(uc *UseCases, version string) *mcp.Server {
+type TriageFindingIn struct {
+	FindingID int64  `json:"finding_id" jsonschema:"finding id from search_findings"`
+	Status    string `json:"status" jsonschema:"open (reopen), accepted (risk accepted) or false_positive"`
+	Note      string `json:"note,omitempty" jsonschema:"why, and until when; shown in the dashboard"`
+}
+
+type TriageComponentIn struct {
+	HostID int64  `json:"host_id" jsonschema:"host id"`
+	Kind   string `json:"kind" jsonschema:"component kind from host_components: os, app or binary"`
+	Key    string `json:"key" jsonschema:"component key from host_components"`
+	Status string `json:"status" jsonschema:"open (reopen), accepted (risk accepted) or false_positive"`
+	Note   string `json:"note,omitempty" jsonschema:"why, and until when; shown in the dashboard"`
+}
+
+type TriageOut struct {
+	Updated int `json:"updated"`
+}
+
+// auditNote marks a verdict as made through MCP, so the dashboard shows where it came from.
+func auditNote(note string, auth *model.Auth) string {
+	tag := "[via MCP: " + auth.McpTokenName + "]"
+	if note = strings.TrimSpace(note); note == "" {
+		return tag
+	}
+	return note + " " + tag
+}
+
+// NewServer registers the read-only tools, plus the triage tools when the
+// token allows triage.
+func NewServer(uc *UseCases, log *logrus.Logger, version string, auth *model.Auth) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "netra-vuln", Version: version}, &mcp.ServerOptions{
 		Instructions: "Package vulnerabilities (Trivy) of Linux VMs grouped by client. " +
 			"Open = unresolved and not triaged; accepted / false_positive were triaged by an admin. " +
-			"A component is one upgrade action: kind os = OS packages from one source package, app = language packages of one app folder, binary = one Go/Rust binary.",
+			"A component is one upgrade action: kind os = OS packages from one source package, app = language packages of one app folder, binary = one Go/Rust binary. " +
+			"Calls are rate limited per admin: for a large host prefer host_components, filter search_findings by host_id and severity, use page_size 100, and on HTTP 429 wait the Retry-After seconds.",
 	})
 	readOnly := &mcp.ToolAnnotations{ReadOnlyHint: true}
 
@@ -81,11 +117,15 @@ func NewServer(uc *UseCases, version string) *mcp.Server {
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "search_findings", Annotations: readOnly,
-		Description: "Search findings (one CVE in one package on one host), most severe first, 25 per page."},
+		Description: "Search findings (one CVE in one package on one host), most severe first. paging.total_page tells how many pages there are."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in FindingsIn) (*mcp.CallToolResult, FindingsOut, error) {
+			size := in.PageSize
+			if size <= 0 {
+				size = defaultPageSize
+			}
 			out, paging, err := uc.Finding.Search(ctx, &model.SearchFindingRequest{Client: in.Client, HostID: in.HostID,
 				Severity: in.Severity, Status: in.Status, Query: in.Query, IncludeResolved: in.IncludeResolved,
-				Page: in.Page, Size: pageSize})
+				Page: in.Page, Size: min(size, maxPageSize)})
 			return nil, FindingsOut{Findings: out, Paging: paging}, err
 		})
 
@@ -99,12 +139,51 @@ func NewServer(uc *UseCases, version string) *mcp.Server {
 			out, err := uc.Finding.Components(ctx, &model.SearchFindingRequest{HostID: in.HostID, Status: status})
 			return nil, ComponentsOut{Components: out}, err
 		})
+
+	if !auth.CanTriage {
+		return s
+	}
+	write := &mcp.ToolAnnotations{DestructiveHint: new(true), IdempotentHint: true}
+	mcp.AddTool(s, &mcp.Tool{Name: "triage_finding", Annotations: write,
+		Description: "Set the triage verdict of one finding: accepted (risk accepted), false_positive, or open (reopen). " +
+			"Accepted and false positive findings leave the open totals. Confirm with the user first."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in TriageFindingIn) (*mcp.CallToolResult, TriageOut, error) {
+			if err := uc.Finding.Triage(ctx, &model.TriageFindingRequest{ID: in.FindingID, Status: in.Status, Note: auditNote(in.Note, auth)}); err != nil {
+				return nil, TriageOut{}, err
+			}
+			log.WithFields(logrus.Fields{"by": auth.Username, "token": auth.McpTokenName, "id": in.FindingID, "status": in.Status}).Info("Finding triaged via MCP")
+			return nil, TriageOut{Updated: 1}, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "triage_component", Annotations: write,
+		Description: "Set one triage verdict on every unresolved finding of a component (from host_components). Confirm with the user first."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in TriageComponentIn) (*mcp.CallToolResult, TriageOut, error) {
+			out, err := uc.Finding.TriageComponent(ctx, &model.TriageComponentRequest{HostID: in.HostID, Kind: in.Kind, Key: in.Key,
+				Status: in.Status, Note: auditNote(in.Note, auth)})
+			if err != nil {
+				return nil, TriageOut{}, err
+			}
+			log.WithFields(logrus.Fields{"by": auth.Username, "token": auth.McpTokenName, "host_id": in.HostID, "component": in.Key,
+				"status": in.Status, "updated": out.Updated}).Info("Component triaged via MCP")
+			return nil, TriageOut{Updated: out.Updated}, nil
+		})
 	return s
 }
 
 // NewHandler serves the tools statelessly with plain JSON responses, so every
-// request is self-contained and passes through the Fiber auth middleware.
-func NewHandler(s *mcp.Server) http.Handler {
-	return mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return s },
-		&mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
+// request is self-contained and passes through the Fiber auth middleware. Mount
+// it with adaptor.HTTPHandlerWithContext so the token's admin reaches getServer.
+// ponytail: builds a server per request (tool schemas re-inferred); cache one
+// read-only and one triage server per token if MCP traffic ever gets heavy.
+func NewHandler(uc *UseCases, log *logrus.Logger, version string) http.Handler {
+	return mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
+		ctx, _ := adaptor.LocalContextFromHTTPRequest(r)
+		if ctx == nil {
+			return nil
+		}
+		auth := model.AuthFromContext(ctx)
+		if auth == nil {
+			return nil
+		}
+		return NewServer(uc, log, version, auth)
+	}, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
 }

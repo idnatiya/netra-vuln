@@ -32,11 +32,11 @@ export function createUseCases(r: Repositories) {
     revokeSession: (id: number) => r.auth.revokeSession(id),
     revokeOtherSessions: () => r.auth.revokeOtherSessions(),
     listMcpTokens: () => r.auth.mcpTokens(),
-    createMcpToken: (name: string) => {
+    createMcpToken: (name: string, canTriage = false) => {
       const n = name.trim()
       if (!n) throw new ApiError('enter a name for the token, e.g. the device or tool', 400)
       if (n.length > 64) throw new ApiError('the name is longer than 64 characters', 400)
-      return r.auth.createMcpToken(n)
+      return r.auth.createMcpToken(n, canTriage)
     },
     revokeMcpToken: (id: number) => r.auth.revokeMcpToken(id),
 

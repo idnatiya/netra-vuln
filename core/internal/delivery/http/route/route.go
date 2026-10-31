@@ -2,15 +2,15 @@
 package route
 
 import (
+	nethttp "net/http"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/adaptor"
-	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/sirupsen/logrus"
 
 	"netra-vuln/core/internal/delivery/http"
 	"netra-vuln/core/internal/delivery/http/middleware"
-	"netra-vuln/core/internal/delivery/mcp"
 )
 
 // Limits are sliding-window request caps per Window.
@@ -23,10 +23,13 @@ type Limits struct {
 	EnrollMax int
 	AuthMax   int
 	LoginMax  int // dashboard logins and password changes per client IP
+	// MCP calls per admin, and in total; separate from the agent limits so a
+	// busy AI client never throttles agents. 0 = 600.
+	McpMax int
 }
 
 func DefaultLimits() Limits {
-	return Limits{Window: time.Minute, PerHostMax: 60, EnrollMax: 30, AuthMax: 300, LoginMax: 10}
+	return Limits{Window: time.Minute, PerHostMax: 60, EnrollMax: 30, AuthMax: 300, LoginMax: 10, McpMax: 600}
 }
 
 type RouteConfig struct {
@@ -40,10 +43,11 @@ type RouteConfig struct {
 	DashboardController *http.DashboardController
 	InstallController   *http.InstallController
 	McpTokenController  *http.McpTokenController
-	McpServer           *gomcp.Server
+	McpHandler          nethttp.Handler
 	HostAuthMiddleware  fiber.Handler
 	AuthMiddleware      fiber.Handler
 	McpAuthMiddleware   fiber.Handler
+	Log                 *logrus.Logger
 }
 
 func (c *RouteConfig) Setup() {
@@ -56,10 +60,14 @@ func (c *RouteConfig) Setup() {
 // SetupMcpRoute is the MCP endpoint for AI clients (Bearer MCP token, read-only tools).
 func (c *RouteConfig) SetupMcpRoute() {
 	l := c.Limits
-	c.App.All("/mcp", middleware.NewRateLimit(l.AuthMax, l.Window, middleware.ConstKey("auth")),
+	mcpMax := l.McpMax
+	if mcpMax == 0 {
+		mcpMax = 600
+	}
+	c.App.All("/mcp", middleware.NewRateLimit(mcpMax, l.Window, middleware.ConstKey("mcp")),
 		middleware.NewSmallBody(), c.McpAuthMiddleware,
-		middleware.NewRateLimit(l.PerHostMax, l.Window, middleware.UserKey),
-		adaptor.HTTPHandler(mcp.NewHandler(c.McpServer)))
+		middleware.NewMcpRateLimit(mcpMax, l.Window, c.Log),
+		adaptor.HTTPHandlerWithContext(c.McpHandler))
 }
 
 // SetupAgentRoute is the API the agents push to (/api/v1, pkg/wire payloads).
