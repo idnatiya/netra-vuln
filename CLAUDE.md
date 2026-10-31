@@ -83,6 +83,7 @@ test/                    # black-box tests through app.Test against MySQL
 Admin API (`/api/admin/v1/*`) responses use `model.WebResponse{data, paging, errors}`; agent API (`/api/v1/*`) responses are `pkg/wire` types as-is and errors plain text. Read report bodies with `BodyRaw()` + explicit gunzip, not `c.Body()` (on decode errors it returns the error text as the body). A raw body over `BodyLimit` is cut off by fasthttp (connection reset), so the agent spools and retries it.
 
 ### Security
+- Admin `DELETE /api/admin/v1/hosts/:id` permanently deletes a revoked host and all its scans and findings in one transaction. Active hosts return 409; unknown hosts return 404. Requires a session and same-origin request. The host detail page offers Delete only after revoke and returns to the client detail after success. The agent remains installed on the VM.
 - Tokens are stored hashed (e.g. SHA-256), not in plaintext
 - Tokens stay required over Tailscale: the tailnet is shared by all clients' VMs, so network reachability does not prove which client a host belongs to. Enroll tokens are single-use and bound to a client; host tokens are issued to and stored by each agent.
 - Validate that a host can only write to its own client

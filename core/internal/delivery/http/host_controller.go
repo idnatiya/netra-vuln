@@ -39,3 +39,15 @@ func (c *HostController) Revoke(ctx fiber.Ctx) error {
 		"by": middleware.GetAuth(ctx).Username}).Info("Host revoked")
 	return ctx.SendStatus(fiber.StatusNoContent)
 }
+
+func (c *HostController) Delete(ctx fiber.Ctx) error {
+	id, err := idParam(ctx)
+	if err != nil {
+		return err
+	}
+	if err := c.UseCase.Delete(ctx.Context(), id); err != nil {
+		return err
+	}
+	c.Log.WithFields(logrus.Fields{"host_id": id, "by": middleware.GetAuth(ctx).Username}).Info("Host deleted")
+	return ctx.SendStatus(fiber.StatusNoContent)
+}

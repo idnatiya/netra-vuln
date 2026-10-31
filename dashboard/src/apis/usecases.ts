@@ -43,10 +43,12 @@ export function createUseCases(r: Repositories) {
 
     listHosts: (client?: string) => r.hosts.list(client),
     revokeHost: (id: number) => r.hosts.revoke(id),
+    deleteHost: (id: number) => r.hosts.delete(id),
 
     trend: (filter: TrendFilter) => r.trend.trend(filter),
 
     listClients: () => r.clients.list(),
+    deleteClient: (name: string) => r.clients.delete(name),
     issueEnrollToken: (name: string) => r.clients.issueEnrollToken(name),
     installInfo: () => r.clients.installInfo(),
     createClient: async (name: string) => {

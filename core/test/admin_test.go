@@ -242,3 +242,56 @@ func TestCreateClient(t *testing.T) {
 		assert.Equal(t, 400, code, "%q", bad)
 	}
 }
+
+func TestDeleteClient(t *testing.T) {
+	ClearAll(t)
+	newClient(t, "empty")
+	cookie := adminSession(t)
+	code, _ := adminDo(t, "DELETE", "/clients/empty", "", "")
+	assert.Equal(t, 401, code)
+	code, _ = adminDo(t, "DELETE", "/clients/empty", "", cookie)
+	assert.Equal(t, 204, code)
+	code, _ = adminDo(t, "DELETE", "/clients/empty", "", cookie)
+	assert.Equal(t, 404, code)
+	h := enrollHost(t, "occupied", "vm1")
+	code, _ = adminDo(t, "DELETE", "/clients/occupied", "", cookie)
+	assert.Equal(t, 409, code)
+	code, _ = adminDo(t, "POST", fmt.Sprintf("/hosts/%d/revoke", h.ID), "", cookie)
+	require.Equal(t, 204, code)
+	code, _ = adminDo(t, "DELETE", "/clients/occupied", "", cookie)
+	assert.Equal(t, 409, code)
+}
+
+func TestDeleteHost(t *testing.T) {
+	ClearAll(t)
+	h := enrollHost(t, "client_a", "vm1")
+	other := enrollHost(t, "client_b", "vm2")
+	ingest(t, h, "ok", cves("CVE-A")...)
+	ingest(t, other, "ok", cves("CVE-B")...)
+	cookie := adminSession(t)
+	path := fmt.Sprintf("/hosts/%d", h.ID)
+	code, _ := adminDo(t, "DELETE", path, "", "")
+	assert.Equal(t, 401, code)
+	req := adminReq("DELETE", path, "", cookie)
+	req.Header.Set("Origin", "https://evil.example")
+	resp, _ := send(t, app, req)
+	assert.Equal(t, 403, resp.StatusCode)
+	code, _ = adminDo(t, "DELETE", "/hosts/nope", "", cookie)
+	assert.Equal(t, 400, code)
+	code, _ = adminDo(t, "DELETE", path, "", cookie)
+	assert.Equal(t, 409, code, "active host must be revoked first")
+	assert.Equal(t, 1, count(t, "SELECT COUNT(*) FROM scans WHERE host_id = ?", h.ID))
+	code, _ = adminDo(t, "POST", path+"/revoke", "", cookie)
+	require.Equal(t, 204, code)
+	code, _ = adminDo(t, "DELETE", path, "", cookie)
+	require.Equal(t, 204, code)
+	for _, table := range []string{"scans", "findings"} {
+		assert.Equal(t, 0, count(t, "SELECT COUNT(*) FROM "+table+" WHERE host_id = ?", h.ID))
+		assert.Equal(t, 1, count(t, "SELECT COUNT(*) FROM "+table+" WHERE host_id = ?", other.ID))
+	}
+	assert.Equal(t, 0, count(t, "SELECT COUNT(*) FROM hosts WHERE id = ?", h.ID))
+	code, _ = adminDo(t, "DELETE", path, "", cookie)
+	assert.Equal(t, 404, code)
+	code, _ = adminDo(t, "DELETE", "/clients/client_a", "", cookie)
+	assert.Equal(t, 204, code, "client can be deleted after its last host")
+}

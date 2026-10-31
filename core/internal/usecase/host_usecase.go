@@ -8,6 +8,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"netra-vuln/core/internal/entity"
 	"netra-vuln/core/internal/model"
@@ -20,6 +21,35 @@ type HostUseCase struct {
 	Log            *logrus.Logger
 	Validate       *validator.Validate
 	HostRepository *repository.HostRepository
+}
+
+// Delete permanently removes a revoked host and its scan and finding history.
+func (c *HostUseCase) Delete(ctx context.Context, id int64) error {
+	tx := c.DB.WithContext(ctx).Begin()
+	defer tx.Rollback()
+	host := new(entity.Host)
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(host, id).Error; err != nil {
+		if isNotFound(err) {
+			return fiber.ErrNotFound
+		}
+		return fiber.ErrInternalServerError
+	}
+	if host.Active() {
+		return fiber.NewError(fiber.StatusConflict, "revoke the host before deleting it")
+	}
+	if err := tx.Where("host_id = ?", id).Delete(&entity.Finding{}).Error; err != nil {
+		return fiber.ErrInternalServerError
+	}
+	if err := tx.Where("host_id = ?", id).Delete(&entity.Scan{}).Error; err != nil {
+		return fiber.ErrInternalServerError
+	}
+	if err := tx.Delete(host).Error; err != nil {
+		return fiber.ErrInternalServerError
+	}
+	if err := tx.Commit().Error; err != nil {
+		return fiber.ErrInternalServerError
+	}
+	return nil
 }
 
 func NewHostUseCase(db *gorm.DB, log *logrus.Logger, validate *validator.Validate, hostRepository *repository.HostRepository) *HostUseCase {

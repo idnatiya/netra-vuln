@@ -77,6 +77,15 @@ export function useRevokeHost() {
   })
 }
 
+export function useDeleteHost() {
+  const uc = useUseCases()
+  const invalidate = useInvalidate()
+  return useMutation({
+    mutationFn: (id: number) => uc.deleteHost(id),
+    onSuccess: () => invalidate('hosts', 'install-hosts', 'findings', 'components', 'clients', 'trend'),
+  })
+}
+
 export function useCreateClient() {
   const uc = useUseCases()
   const invalidate = useInvalidate()
@@ -120,4 +129,10 @@ export function useRevokeSession() {
     },
     onSuccess: () => invalidate('sessions'),
   })
+}
+
+export function useDeleteClient() {
+ const uc = useUseCases()
+ const invalidate = useInvalidate()
+ return useMutation({ mutationFn: (name: string) => uc.deleteClient(name), onSuccess: () => invalidate('clients', 'hosts', 'findings', 'components', 'trend') })
 }

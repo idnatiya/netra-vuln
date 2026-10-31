@@ -28,12 +28,14 @@ export interface FindingsRepository {
 export interface HostsRepository {
   list(client?: string): Promise<Host[]>
   revoke(id: number): Promise<void>
+  delete(id: number): Promise<void>
 }
 
 export interface ClientsRepository {
   list(): Promise<Client[]>
   /** Creates a client. */
   create(name: string): Promise<void>
+  delete(name: string): Promise<void>
   setScanConfig(name: string, cfg: ScanConfig): Promise<ScanConfig>
   clearScanConfig(name: string): Promise<void>
   /** Returns an independent single-use enroll token. */

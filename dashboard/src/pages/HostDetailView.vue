@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { useBreadcrumbs } from '@/composables/breadcrumbs'
-import { useComponents, useFindings, useHosts, useRevokeHost } from '@/composables/queries'
+import { useComponents, useDeleteHost, useFindings, useHosts, useRevokeHost } from '@/composables/queries'
 import { errorMessage, formatDateTime, formatNumber, plural, relative } from '@/lib/format'
 
 const route = useRoute()
@@ -55,6 +55,17 @@ const triagingFinding = ref<Finding | null>(null)
 
 const revoke = useRevokeHost()
 const confirmingRevoke = ref(false)
+const confirmingDelete = ref(false)
+const deletion = useDeleteHost()
+async function confirmDelete() {
+  if (!host.value?.revokedAt || deletion.isPending.value) return
+  const target = host.value
+  try {
+    await deletion.mutateAsync(target.id)
+    toast.success(`${target.hostname} deleted`)
+    await router.push({ name: 'client', params: { name: target.client } })
+  } catch (e) { toast.error(errorMessage(e)) }
+}
 async function confirmRevoke() {
   if (!host.value) return
   try {
@@ -110,6 +121,7 @@ const findingGrid = 'grid grid-cols-[minmax(0,1fr)_4.5rem] items-center gap-x-4 
       <div class="min-w-0 flex-1 sm:max-w-md"><CopyCommand command="sudo vuln-agent scan" /></div>
       <span class="hidden text-[13px] text-muted-foreground lg:inline">Re-scan on the host after a fix.</span>
       <Button v-if="!host.revokedAt" variant="outline" class="ml-auto" @click="confirmingRevoke = true"><Ban /> Revoke</Button>
+      <Button v-else variant="destructive" class="ml-auto" @click="confirmingDelete = true">Delete host</Button>
     </div>
 
     <UnderlineTabs v-model="tab" :tabs="tabs" />
@@ -221,6 +233,18 @@ const findingGrid = 'grid grid-cols-[minmax(0,1fr)_4.5rem] items-center gap-x-4 
       <AlertDialogFooter>
         <AlertDialogCancel>Cancel</AlertDialogCancel>
         <AlertDialogAction :disabled="revoke.isPending.value" @click="confirmRevoke">Revoke host</AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
+  <AlertDialog :open="confirmingDelete" @update:open="confirmingDelete = $event">
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>Delete {{ host?.hostname }} permanently?</AlertDialogTitle>
+        <AlertDialogDescription>This permanently deletes the host, all scans, and all findings. This cannot be undone. The agent remains installed on the VM.</AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel>Cancel</AlertDialogCancel>
+        <AlertDialogAction :disabled="deletion.isPending.value" @click.prevent="confirmDelete">Delete host</AlertDialogAction>
       </AlertDialogFooter>
     </AlertDialogContent>
   </AlertDialog>

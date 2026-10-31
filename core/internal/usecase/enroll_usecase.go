@@ -46,7 +46,7 @@ func (c *EnrollUseCase) Enroll(ctx context.Context, request *wire.EnrollRequest)
 
 	// Unknown client and bad token look the same to the caller.
 	client := new(entity.Client)
-	if err := c.ClientRepository.FindByName(tx, client, request.ClientID); err != nil {
+	if err := c.ClientRepository.FindByNameForUpdate(tx, client, request.ClientID); err != nil {
 		if isNotFound(err) {
 			return nil, fiber.ErrUnauthorized
 		}

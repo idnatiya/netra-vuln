@@ -75,3 +75,11 @@ func (c *ClientController) ClearScanConfig(ctx fiber.Ctx) error {
 type wireJSON []byte
 
 func (w wireJSON) MarshalJSON() ([]byte, error) { return w, nil }
+
+func (c *ClientController) Delete(ctx fiber.Ctx) error {
+	if err := c.UseCase.Delete(ctx.Context(), ctx.Params("name")); err != nil {
+		return err
+	}
+	c.Log.WithFields(logrus.Fields{"client": ctx.Params("name"), "by": middleware.GetAuth(ctx).Username}).Info("Client deleted")
+	return ctx.SendStatus(fiber.StatusNoContent)
+}

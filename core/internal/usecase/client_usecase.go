@@ -63,7 +63,7 @@ func (c *ClientUseCase) IssueEnrollToken(ctx context.Context, request *model.Iss
 	defer tx.Rollback()
 
 	client := new(entity.Client)
-	if err := c.ClientRepository.FindByName(tx, client, request.Name); err != nil {
+	if err := c.ClientRepository.FindByNameForUpdate(tx, client, request.Name); err != nil {
 		if isNotFound(err) {
 			return nil, fiber.NewError(fiber.StatusNotFound, fmt.Sprintf("client %q not found", request.Name))
 		}
@@ -139,4 +139,34 @@ func buildOverview(db *gorm.DB, clients *repository.ClientRepository, hosts *rep
 		summaries[i].MarkStale(t)
 	}
 	return entity.BuildOverview(all, summaries), nil
+}
+
+// Delete removes a client only when it has no hosts, including revoked hosts.
+func (c *ClientUseCase) Delete(ctx context.Context, name string) error {
+	tx := c.DB.WithContext(ctx).Begin()
+	defer tx.Rollback()
+	client := new(entity.Client)
+	if err := c.ClientRepository.FindByNameForUpdate(tx, client, name); err != nil {
+		if isNotFound(err) {
+			return fiber.ErrNotFound
+		}
+		return fiber.ErrInternalServerError
+	}
+	var count int64
+	if err := tx.Model(&entity.Host{}).Where("client_id = ?", client.ID).Count(&count).Error; err != nil {
+		return fiber.ErrInternalServerError
+	}
+	if count > 0 {
+		return fiber.NewError(fiber.StatusConflict, "client has hosts and cannot be deleted")
+	}
+	if err := tx.Where("client_id = ?", client.ID).Delete(&entity.EnrollToken{}).Error; err != nil {
+		return fiber.ErrInternalServerError
+	}
+	if err := tx.Delete(client).Error; err != nil {
+		return fiber.ErrInternalServerError
+	}
+	if err := tx.Commit().Error; err != nil {
+		return fiber.ErrInternalServerError
+	}
+	return nil
 }

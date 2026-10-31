@@ -22,7 +22,7 @@ const groups = [
     { name: 'findings', label: 'Search CVEs', icon: Search, match: ['findings'] },
   ] },
   { label: 'Manage', items: [
-    { name: 'clients', label: 'Clients', icon: Users, match: ['clients'] },
+    { name: 'clients', label: 'Clients', icon: Users, match: ['clients', 'client'] },
     { name: 'add-agent', label: 'Add agent', icon: Plus, match: ['add-agent'] },
   ] },
 ]

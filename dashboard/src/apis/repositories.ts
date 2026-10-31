@@ -45,10 +45,12 @@ export function createHttpRepositories(http: HttpClient): Repositories {
       })).updated,
     },
     hosts: {
+      delete: (id) => http.request<void>('DELETE', `/hosts/${id}`),
       list: async (client) => (await http.get<HostDTO[]>('/hosts', { client })).map(toHost),
       revoke: (id) => http.request<void>('POST', `/hosts/${id}/revoke`),
     },
     clients: {
+      delete: (name) => http.request<void>('DELETE', `/clients/${encodeURIComponent(name)}`),
       list: async () => (await http.get<ClientDTO[]>('/clients')).map(toClient),
       create: async (name) => { await http.request('POST', '/clients', { name }) },
       setScanConfig: (name, cfg) =>
