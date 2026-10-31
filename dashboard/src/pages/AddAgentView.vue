@@ -76,7 +76,8 @@ sudo vuln-agent enroll`)
     </section>
   </div>
   <div v-if="token" class="sticky bottom-0 mt-8 flex flex-wrap items-center gap-3 border-t bg-sidebar/95 px-4 py-3">
-    <span class="text-muted-foreground">Waiting for agents from {{ client }}…</span>
+    <span v-if="!added.length" class="text-muted-foreground">Waiting for agents from {{ client }}…</span>
+    <span v-else>{{ added.length }} agent{{ added.length > 1 ? 's' : '' }} connected to {{ client }}</span>
     <span v-if="hosts.isError.value" role="alert">Could not load hosts.</span>
     <RouterLink v-for="host in added" :key="host.id" class="ml-auto rounded bg-primary px-3 py-2 text-primary-foreground" :to="{ name: 'host', params: { id: host.id } }">{{ host.hostname }} · View host</RouterLink>
   </div>

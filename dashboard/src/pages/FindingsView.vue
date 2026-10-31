@@ -30,7 +30,7 @@ const hostId = ref<string>(q('host_id') || ANY)
 const sort = ref<FindingSort>('severity')
 const includeResolved = ref(false)
 const page = ref(1)
-const pageSize = 50
+const pageSize = 25
 
 const clientFilter = computed({
   get: () => client.value ?? ANY,

@@ -1,4 +1,4 @@
-import type { Component, Host, Page, TrendPoint, TriageStatus } from '@/types/models'
+import type { Component, Host, Page, TrendPoint } from '@/types/models'
 
 // Pure business rules shared by views. Thresholds mirror central's domain package.
 
@@ -76,11 +76,6 @@ export function pageCount(p: Pick<Page<unknown>, 'total' | 'pageSize'>): number 
   return Math.max(1, Math.ceil(p.total / p.pageSize))
 }
 
-/** Accepting or dismissing a finding needs a reason, so the decision is auditable. */
-export function triageNeedsNote(status: TriageStatus): boolean {
-  return status !== 'open'
-}
-
 const CLIENT_NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/
 
 export function isValidClientName(name: string): boolean {
@@ -151,8 +146,8 @@ export function componentAdvice(c: AdviceComponent, h: AdviceHost): ComponentAdv
   if (c.kind === 'binary') {
     return {
       title: basename(c.key), detail: c.key,
-      note: 'A compiled binary with outdated libraries. Upgrade the package or app that ships it; this finds the package:',
-      command: deb ? `dpkg -S ${c.key}` : `rpm -qf ${c.key}`,
+      note: 'A compiled binary with outdated libraries. Upgrade the package or app that ships it. This finds the package; if none owns it, the binary was installed by hand or by other software (look under its folder), so update or remove it there:',
+      command: `${deb ? 'dpkg -S' : 'rpm -qf'} ${c.key} 2>/dev/null || echo 'No package owns ${c.key}: update the software that installed it'`,
     }
   }
   const title = basename(c.key)

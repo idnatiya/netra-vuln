@@ -2,7 +2,6 @@
 import { ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import type { Component, TriageStatus } from '@/types/models'
-import { triageNeedsNote } from '@/lib/rules'
 import { useTriageComponent } from '@/composables/queries'
 import { errorMessage, plural } from '@/lib/format'
 import { Button } from './ui/button'
@@ -67,7 +66,7 @@ async function save() {
       </fieldset>
 
       <div class="grid gap-2">
-        <Label for="component-note">Note <span v-if="triageNeedsNote(status)" class="text-muted-foreground">(required)</span></Label>
+        <Label for="component-note">Note <span class="text-muted-foreground">(optional)</span></Label>
         <Textarea id="component-note" v-model="note" rows="3" maxlength="2000" placeholder="Why, and until when?" />
       </div>
 

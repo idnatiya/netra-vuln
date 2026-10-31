@@ -1,14 +1,13 @@
 import type { Component, ComponentFilter, FindingFilter, ScanConfig, TrendFilter, TriageStatus } from '@/types/models'
-import { isValidClientName, triageNeedsNote } from '@/lib/rules'
+import { isValidClientName } from '@/lib/rules'
 import { ApiError } from './errors'
 import type { Repositories } from './ports'
 
 // Use cases: validation and orchestration on top of the ports. Views call these only.
 
-/** Trimmed triage note; accepting or dismissing needs one. */
-function triageNote(status: TriageStatus, note: string): string {
+/** Trimmed triage note (optional). */
+function triageNote(note: string): string {
   const n = note.trim()
-  if (triageNeedsNote(status) && !n) throw new ApiError('a note is required when accepting or dismissing a finding', 400)
   if (n.length > 2000) throw new ApiError('note is longer than 2000 characters', 400)
   return n
 }
@@ -36,10 +35,10 @@ export function createUseCases(r: Repositories) {
     listFindings: (filter: FindingFilter) => r.findings.list({ ...filter, query: filter.query?.trim() || undefined }),
     listComponents: (filter: ComponentFilter) => r.findings.components({ ...filter, query: filter.query?.trim() || undefined }),
     triageFinding: async (id: number, status: TriageStatus, note: string) => {
-      await r.findings.triage(id, status, triageNote(status, note))
+      await r.findings.triage(id, status, triageNote(note))
     },
     triageComponent: (c: Pick<Component, 'hostId' | 'kind' | 'key'>, status: TriageStatus, note: string) =>
-      r.findings.triageComponent(c, status, triageNote(status, note)),
+      r.findings.triageComponent(c, status, triageNote(note)),
 
     listHosts: (client?: string) => r.hosts.list(client),
     revokeHost: (id: number) => r.hosts.revoke(id),

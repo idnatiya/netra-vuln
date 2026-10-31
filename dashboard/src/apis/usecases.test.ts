@@ -15,13 +15,13 @@ function fakeRepos() {
 }
 
 describe('triageFinding', () => {
-  it('requires a note to accept or dismiss', async () => {
+  it('trims an optional note', async () => {
     const r = fakeRepos()
     const uc = createUseCases(r)
-    await expect(uc.triageFinding(1, 'accepted', '  ')).rejects.toBeInstanceOf(ApiError)
+    await uc.triageFinding(1, 'accepted', '  ')
     await uc.triageFinding(1, 'false_positive', ' kernel not booted ')
-    await uc.triageFinding(2, 'open', '')
-    expect(r.findings.triage.mock.calls).toEqual([[1, 'false_positive', 'kernel not booted'], [2, 'open', '']])
+    await expect(uc.triageFinding(2, 'open', 'x'.repeat(2001))).rejects.toBeInstanceOf(ApiError)
+    expect(r.findings.triage.mock.calls).toEqual([[1, 'accepted', ''], [1, 'false_positive', 'kernel not booted']])
   })
 })
 

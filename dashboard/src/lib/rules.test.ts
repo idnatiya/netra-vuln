@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Host } from '@/types/models'
-import { componentAdvice, dailyTotals, daysSince, hostHealth, hostIssues, hostLevel, inHostTab, isRunningKernel, isValidClientName, pageCount, triageNeedsNote, worstFirst } from './rules'
+import { componentAdvice, dailyTotals, daysSince, hostHealth, hostIssues, hostLevel, inHostTab, isRunningKernel, isValidClientName, pageCount, worstFirst } from './rules'
 
 const base: Host = {
   id: 1, client: 'a', hostname: 'vm', osFamily: 'debian', osName: 'Ubuntu', osVersion: '24.04', arch: 'amd64',
@@ -38,9 +38,7 @@ describe('helpers', () => {
     expect(pageCount({ total: 0, pageSize: 50 })).toBe(1)
     expect(pageCount({ total: 101, pageSize: 50 })).toBe(3)
   })
-  it('triage note and client name rules', () => {
-    expect(triageNeedsNote('open')).toBe(false)
-    expect(triageNeedsNote('accepted')).toBe(true)
+  it('client name rules', () => {
     expect(isValidClientName('client_a')).toBe(true)
     expect(isValidClientName('Client A')).toBe(false)
   })
@@ -80,7 +78,7 @@ describe('componentAdvice', () => {
       .toMatchObject({ title: 'shop', command: 'cd /var/www/shop && composer update --with-dependencies laravel/framework' })
     expect(componentAdvice({ ...app, key: '/home/u/.m2', types: ['jar'] }, ubuntu).command).toBeUndefined()
     expect(componentAdvice({ kind: 'binary', key: '/usr/bin/dockerd', packages: ['stdlib'], pkgCount: 1, types: ['gobinary'] }, ubuntu))
-      .toMatchObject({ title: 'dockerd', command: 'dpkg -S /usr/bin/dockerd' })
+      .toMatchObject({ title: 'dockerd', command: expect.stringMatching(/^dpkg -S \/usr\/bin\/dockerd 2>\/dev\/null \|\| echo 'No package owns/) })
   })
 })
 
