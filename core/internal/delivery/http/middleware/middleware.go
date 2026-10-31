@@ -170,3 +170,18 @@ func (l *limitReader) Read(p []byte) (int, error) {
 	}
 	return n, err
 }
+
+// NewMcpAuth authenticates an AI client by its Bearer MCP token.
+func NewMcpAuth(mcpTokenUseCase *usecase.McpTokenUseCase) fiber.Handler {
+	return func(ctx fiber.Ctx) error {
+		token, _ := strings.CutPrefix(ctx.Get(fiber.HeaderAuthorization), "Bearer ")
+		auth, err := mcpTokenUseCase.Verify(ctx.Context(), token)
+		if err != nil {
+			return err
+		}
+		ctx.Locals(authKey, auth)
+		return ctx.Next()
+	}
+}
+
+func UserKey(ctx fiber.Ctx) string { return "mcp:" + strconv.FormatInt(GetAuth(ctx).UserID, 10) }

@@ -148,3 +148,7 @@ func SessionToAuth(s *entity.AdminSession) *model.Auth {
 func AdminUserToResponse(u entity.AdminUser) model.AdminUserResponse {
 	return model.AdminUserResponse{Username: u.Username, CreatedAt: u.CreatedAt, DisabledAt: u.DisabledAt}
 }
+
+func McpTokenToResponse(t entity.McpToken) model.McpTokenResponse {
+	return model.McpTokenResponse{ID: t.ID, Name: t.Name, CreatedAt: t.CreatedAt, LastUsedAt: t.LastUsedAt}
+}

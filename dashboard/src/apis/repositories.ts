@@ -1,8 +1,8 @@
 import type { Repositories } from '@/apis/ports'
 import type { ComponentFilter, ScanConfig } from '@/types/models'
 import {
-  type AdminSessionDTO, type ClientDTO, type ComponentDTO, type FindingDTO, type HostDTO, type SessionDTO, type TrendDTO,
-  toAdminSession, toClient, toComponent, toFinding, toHost, toSession, toTrend,
+  type AdminSessionDTO, type McpTokenDTO, type ClientDTO, type ComponentDTO, type FindingDTO, type HostDTO, type SessionDTO, type TrendDTO,
+  toAdminSession, toMcpToken, toClient, toComponent, toFinding, toHost, toSession, toTrend,
 } from './dto'
 import type { HttpClient } from './http'
 
@@ -26,6 +26,12 @@ export function createHttpRepositories(http: HttpClient): Repositories {
       sessions: async () => (await http.get<AdminSessionDTO[]>('/me/sessions')).map(toAdminSession),
       revokeSession: (id) => http.request<void>('DELETE', `/me/sessions/${id}`),
       revokeOtherSessions: async () => (await http.request<{ count: number }>('DELETE', '/me/sessions')).count,
+      mcpTokens: async () => (await http.get<McpTokenDTO[]>('/mcp-tokens')).map(toMcpToken),
+      createMcpToken: async (name) => {
+        const d = await http.request<McpTokenDTO & { token: string }>('POST', '/mcp-tokens', { name })
+        return { ...toMcpToken(d), token: d.token }
+      },
+      revokeMcpToken: (id) => http.request<void>('DELETE', `/mcp-tokens/${id}`),
     },
     trend: {
       trend: async (f) => (await http.get<TrendDTO[]>('/trend', { client: f.client, host_id: f.hostId, days: f.days })).map(toTrend),

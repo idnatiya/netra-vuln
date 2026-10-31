@@ -234,7 +234,7 @@ func TestCreateClient(t *testing.T) {
 	require.Equal(t, 201, code)
 	var res model.WebResponse[model.CreateClientResponse]
 	require.NoError(t, json.Unmarshal(b, &res))
-	assert.Equal(t, "client_a", res.Data.Name)
+	assert.Equal(t, "acme-01", res.Data.Name)
 	code, _ = adminDo(t, "POST", "/clients", `{"name":"acme-01"}`, cookie)
 	assert.Equal(t, 409, code, "duplicate")
 	for _, bad := range []string{"", "Client", "-a", "a b", strings.Repeat("a", 65)} {

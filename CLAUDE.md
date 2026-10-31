@@ -113,6 +113,7 @@ Admin-only SPA; admins see every client (no per-client logins). Dark only, palet
 3. Search CVEs (`/findings`): flat list across hosts; filter by client, host, severity, triage status, CVE/package search; paging; triage
 4. Clients: cards with a 14-day sparkline (`/trend?client=`); create clients and configure per-client scan overrides
 5. Account (`/account`, from the sidebar user): profile, change password (`POST /api/admin/v1/me/password`; signs out the admin's other sessions), active sessions with device/IP (`GET /me/sessions`, `DELETE /me/sessions/:id`, `DELETE /me/sessions` = all others)
+6. MCP (`/mcp`, sidebar Manage): create/revoke MCP tokens (`/api/admin/v1/mcp-tokens`, per admin, shown once) and copy-ready setup per AI client (`mcpClientConfigs` in `src/lib/rules.ts`: Claude Code, Codex, OpenCode, Antigravity, Cursor, Claude Desktop via `mcp-remote`)
 
 Rules:
 - Components (`domain.Finding.Component`, stored at ingest and refreshed every scan) group findings into one upgrade action each: `os` = OS packages with the same installed version (one source package, e.g. all `linux-*` kernel pieces; shown as "Linux kernel" + reboot hint), `app` = language packages under one application folder (from Trivy's `PkgPath`, cut before `vendor/`, `node_modules/`, `site-packages/`, `.venv/`, `WEB-INF/`…; package caches like `.m2`/`.cache` group as the cache), `binary` = one Go/Rust binary. `POST /api/admin/v1/components/triage` applies one verdict to every unresolved finding of a component. Host rows carry `new_in_last_scan` / `resolved_in_last_scan` (findings whose `first_seen` / `resolved_at` equal the host's last successful `last_scan_at`) and `first_scan`.
@@ -122,6 +123,11 @@ Rules:
 - Admin API JSON shapes live in `core/internal/model` (not part of the agent contract in the agent module's `wire`); the dashboard's `apis/http.ts` unwraps `data` and reads `paging` / `errors`.
 - Dashboard structure: `src/types` contains models, `src/lib` contains pure rules, `src/apis` contains HTTP access and validation, and `src/pages`, `src/components`, and `src/composables` contain the UI. Views never call `fetch`.
 - Production CSP is `default-src 'self'`: no remote fonts/scripts/styles (a vitest guard checks `style.css`).
+
+## MCP
+- `/mcp` is a read-only MCP server (Streamable HTTP, stateless, JSON responses; official `github.com/modelcontextprotocol/go-sdk`) in `core/internal/delivery/mcp`. Tools `list_clients`, `list_hosts`, `search_findings` (25/page), `host_components` call the same use cases as the admin API and return its models.
+- Auth: `Authorization: Bearer <mcp token>` (`mcp_tokens`, SHA-256 hash, bound to the admin who created it, `last_used_at` at most once a minute, revoke = `revoked_at`). Rate limited per admin. Caddy serves `/mcp` behind `ADMIN_ALLOW_CIDRS`.
+- No write tools (triage) and no LLM calls inside central.
 
 ## Deployment
 - `deploy/central/docker-compose.yml`: `mysql` (named volume), `migrate` (one-shot `central migrate`), `central` (distroless, healthcheck `central healthcheck`), `caddy` (automatic HTTPS, serves the dashboard SPA, proxies `/api/*`; optional `ADMIN_ALLOW_CIDRS` for the dashboard), `backup` (daily `mysqldump` into `./backups`, `BACKUP_KEEP_DAYS`). Configure via `.env` (from `.env.example`); first admin: `docker compose exec central central admin create <name>`. `.dockerignore` keeps `dev-out/` and other local data out of the build context.
@@ -152,4 +158,4 @@ Rules:
 - Remote command execution in the agent
 - Agent auto-update from central
 - Secret, misconfig, or license scanning (vuln only for now)
-- AI/LLM integration
+- AI/LLM calls inside central or the agent (the read-only MCP server for external AI clients is in scope)

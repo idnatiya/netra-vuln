@@ -52,3 +52,24 @@ type AdminUserResponse struct {
 	CreatedAt  time.Time  `json:"created_at"`
 	DisabledAt *time.Time `json:"disabled_at"`
 }
+
+type CreateMcpTokenRequest struct {
+	Name string `json:"name" validate:"required,max=64"`
+}
+
+type McpTokenResponse struct {
+	ID         int64      `json:"id"`
+	Name       string     `json:"name"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at"`
+}
+
+// CreateMcpTokenResponse carries the plaintext token; it is shown once.
+type CreateMcpTokenResponse struct {
+	McpTokenResponse
+	Token string `json:"token"`
+}
+
+type RevokeMcpTokenRequest struct {
+	ID int64 `json:"-" validate:"required,min=1"`
+}

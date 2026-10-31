@@ -40,3 +40,18 @@ const (
 	MinPasswordBytes = 12
 	MaxPasswordBytes = 72
 )
+
+// McpToken lets an AI client call the MCP endpoint as the admin who created it;
+// only the token hash is stored.
+type McpToken struct {
+	ID         int64      `gorm:"column:id;primaryKey"`
+	UserID     int64      `gorm:"column:user_id"`
+	Name       string     `gorm:"column:name"`
+	TokenHash  []byte     `gorm:"column:token_hash"`
+	CreatedAt  time.Time  `gorm:"column:created_at"`
+	LastUsedAt *time.Time `gorm:"column:last_used_at"`
+	RevokedAt  *time.Time `gorm:"column:revoked_at"`
+	User       AdminUser  `gorm:"foreignKey:UserID;references:ID"`
+}
+
+func (t *McpToken) TableName() string { return "mcp_tokens" }

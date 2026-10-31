@@ -1,5 +1,5 @@
 import type {
-  AdminSession, Client, Component, ComponentFilter, Finding, FindingFilter, Host, Page, ScanConfig, Session, TrendFilter,
+  AdminSession, Client, McpToken, Component, ComponentFilter, Finding, FindingFilter, Host, Page, ScanConfig, Session, TrendFilter,
   TrendPoint, TriageStatus,
 } from '@/types/models'
 
@@ -15,6 +15,10 @@ export interface AuthRepository {
   revokeSession(id: number): Promise<void>
   /** Returns how many sessions were signed out. */
   revokeOtherSessions(): Promise<number>
+  mcpTokens(): Promise<McpToken[]>
+  /** Returns the new token with its plaintext value (shown once). */
+  createMcpToken(name: string): Promise<McpToken & { token: string }>
+  revokeMcpToken(id: number): Promise<void>
 }
 
 export interface FindingsRepository {

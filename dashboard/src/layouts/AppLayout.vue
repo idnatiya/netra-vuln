@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronRight, ChevronsUpDown, LogOut, Plus, Search, Server, ShieldCheck, Users } from '@lucide/vue'
+import { Bot, ChevronRight, ChevronsUpDown, LogOut, Plus, Search, Server, ShieldCheck, Users } from '@lucide/vue'
 import { useQueryClient } from '@tanstack/vue-query'
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -24,6 +24,7 @@ const groups = [
   { label: 'Manage', items: [
     { name: 'clients', label: 'Clients', icon: Users, match: ['clients', 'client'] },
     { name: 'add-agent', label: 'Add agent', icon: Plus, match: ['add-agent'] },
+    { name: 'mcp', label: 'MCP', icon: Bot, match: ['mcp'] },
   ] },
 ]
 

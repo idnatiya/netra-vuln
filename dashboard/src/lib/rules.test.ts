@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Host } from '@/types/models'
-import { componentAdvice, dailyTotals, daysSince, hostHealth, hostIssues, hostLevel, inHostTab, isRunningKernel, isValidClientName, pageCount, worstFirst } from './rules'
+import { componentAdvice, dailyTotals, daysSince, hostHealth, hostIssues, hostLevel, inHostTab, isRunningKernel, isValidClientName, mcpClientConfigs, pageCount, worstFirst } from './rules'
 
 const base: Host = {
   id: 1, client: 'a', hostname: 'vm', osFamily: 'debian', osName: 'Ubuntu', osVersion: '24.04', arch: 'amd64',
@@ -122,5 +122,23 @@ describe('dailyTotals', () => {
     ]
     expect(dailyTotals(pts, 5, today)).toEqual([0, 3, 3, 1, 1])
     expect(dailyTotals([], 3, today)).toEqual([0, 0, 0])
+  })
+})
+
+describe('mcpClientConfigs', () => {
+  const configs = mcpClientConfigs('https://vuln.example.com/mcp', 'tok123')
+  it('puts the URL and Bearer token into every snippet', () => {
+    for (const c of configs) {
+      expect(c.snippet, c.id).toContain('https://vuln.example.com/mcp')
+      expect(c.snippet, c.id).toContain('Bearer tok123')
+    }
+  })
+  it('emits valid JSON for the JSON-configured clients', () => {
+    for (const id of ['opencode', 'antigravity', 'cursor', 'claude-desktop']) {
+      expect(() => JSON.parse(configs.find((c) => c.id === id)!.snippet), id).not.toThrow()
+    }
+  })
+  it('uses the Claude Code CLI form', () => {
+    expect(configs[0]!.snippet).toBe('claude mcp add --transport http netra-vuln https://vuln.example.com/mcp --header "Authorization: Bearer tok123"')
   })
 })

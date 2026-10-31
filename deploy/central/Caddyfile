@@ -32,6 +32,10 @@
 		handle /api/admin/* {
 			reverse_proxy central:8080
 		}
+		# MCP for AI clients (Bearer MCP token from the dashboard's MCP page).
+		handle /mcp {
+			reverse_proxy central:8080
+		}
 		handle {
 			root * /srv/dashboard
 			@assets path /assets/*

@@ -5,9 +5,12 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/adaptor"
+	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"netra-vuln/core/internal/delivery/http"
 	"netra-vuln/core/internal/delivery/http/middleware"
+	"netra-vuln/core/internal/delivery/mcp"
 )
 
 // Limits are sliding-window request caps per Window.
@@ -36,14 +39,27 @@ type RouteConfig struct {
 	FindingController   *http.FindingController
 	DashboardController *http.DashboardController
 	InstallController   *http.InstallController
+	McpTokenController  *http.McpTokenController
+	McpServer           *gomcp.Server
 	HostAuthMiddleware  fiber.Handler
 	AuthMiddleware      fiber.Handler
+	McpAuthMiddleware   fiber.Handler
 }
 
 func (c *RouteConfig) Setup() {
 	c.SetupAgentRoute()
 	c.SetupAdminGuestRoute()
 	c.SetupAdminAuthRoute()
+	c.SetupMcpRoute()
+}
+
+// SetupMcpRoute is the MCP endpoint for AI clients (Bearer MCP token, read-only tools).
+func (c *RouteConfig) SetupMcpRoute() {
+	l := c.Limits
+	c.App.All("/mcp", middleware.NewRateLimit(l.AuthMax, l.Window, middleware.ConstKey("auth")),
+		middleware.NewSmallBody(), c.McpAuthMiddleware,
+		middleware.NewRateLimit(l.PerHostMax, l.Window, middleware.UserKey),
+		adaptor.HTTPHandler(mcp.NewHandler(c.McpServer)))
 }
 
 // SetupAgentRoute is the API the agents push to (/api/v1, pkg/wire payloads).
@@ -101,4 +117,8 @@ func (c *RouteConfig) SetupAdminAuthRoute() {
 	admin.Get("/components", c.FindingController.Components)
 	admin.Post("/components/triage", c.FindingController.TriageComponent)
 	admin.Patch("/findings/:id", c.FindingController.Triage)
+
+	admin.Get("/mcp-tokens", c.McpTokenController.List)
+	admin.Post("/mcp-tokens", c.McpTokenController.Create)
+	admin.Delete("/mcp-tokens/:id", c.McpTokenController.Revoke)
 }

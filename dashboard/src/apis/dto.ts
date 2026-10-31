@@ -1,5 +1,5 @@
 import type {
-  AdminSession, Client, Component, ComponentKind, Finding, Host, ScanConfig, Session, Severity, TrendPoint, TriageStatus,
+  AdminSession, Client, McpToken, Component, ComponentKind, Finding, Host, ScanConfig, Session, Severity, TrendPoint, TriageStatus,
 } from '@/types/models'
 
 // Shapes returned by central's admin API (snake_case) and their mapping to domain types.
@@ -72,4 +72,9 @@ export const toTrend = (d: TrendDTO): TrendPoint => ({ day: new Date(`${d.day}T0
 export interface AdminSessionDTO { id: number, created_at: string, expires_at: string, ip: string, user_agent: string, current: boolean }
 export const toAdminSession = (d: AdminSessionDTO): AdminSession => ({
   id: d.id, createdAt: date(d.created_at), expiresAt: date(d.expires_at), ip: d.ip, userAgent: d.user_agent, current: d.current,
+})
+
+export interface McpTokenDTO { id: number, name: string, created_at: string, last_used_at: string | null }
+export const toMcpToken = (d: McpTokenDTO): McpToken => ({
+  id: d.id, name: d.name, createdAt: date(d.created_at), lastUsedAt: d.last_used_at ? date(d.last_used_at) : undefined,
 })

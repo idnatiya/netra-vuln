@@ -74,3 +74,36 @@ func (r *AdminSessionRepository) DeleteOthers(db *gorm.DB, userID, keepID int64)
 func (r *AdminSessionRepository) DeleteExpired(db *gorm.DB, now time.Time) error {
 	return db.Where("expires_at <= ?", now).Delete(&entity.AdminSession{}).Error
 }
+
+type McpTokenRepository struct {
+	Repository[entity.McpToken]
+	Log *logrus.Logger
+}
+
+func NewMcpTokenRepository(log *logrus.Logger) *McpTokenRepository {
+	return &McpTokenRepository{Log: log}
+}
+
+// FindActiveByTokenHash loads an unrevoked token of an active admin, with the admin.
+func (r *McpTokenRepository) FindActiveByTokenHash(db *gorm.DB, t *entity.McpToken, hash []byte) error {
+	return db.Joins("User").
+		Where("mcp_tokens.token_hash = ? AND mcp_tokens.revoked_at IS NULL AND User.disabled_at IS NULL", hash).
+		Take(t).Error
+}
+
+// FindActiveByUser lists a user's unrevoked tokens, newest first.
+func (r *McpTokenRepository) FindActiveByUser(db *gorm.DB, userID int64) ([]entity.McpToken, error) {
+	var out []entity.McpToken
+	err := db.Where("user_id = ? AND revoked_at IS NULL", userID).Order("created_at DESC, id DESC").Find(&out).Error
+	return out, err
+}
+
+func (r *McpTokenRepository) TouchLastUsed(db *gorm.DB, id int64, at time.Time) error {
+	return db.Model(&entity.McpToken{}).Where("id = ?", id).Update("last_used_at", at).Error
+}
+
+// Revoke revokes one unrevoked token of a user and returns how many rows changed.
+func (r *McpTokenRepository) Revoke(db *gorm.DB, userID, id int64, at time.Time) (int64, error) {
+	res := db.Model(&entity.McpToken{}).Where("id = ? AND user_id = ? AND revoked_at IS NULL", id, userID).Update("revoked_at", at)
+	return res.RowsAffected, res.Error
+}

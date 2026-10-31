@@ -21,6 +21,14 @@ export interface AdminSession {
   current: boolean
 }
 
+/** A Bearer token an AI client uses for the MCP endpoint. */
+export interface McpToken {
+  id: number
+  name: string
+  createdAt: Date
+  lastUsedAt?: Date
+}
+
 export interface ScanConfig {
   severity?: Severity[]
   ignore_unfixed?: boolean

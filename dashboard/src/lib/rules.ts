@@ -169,3 +169,33 @@ export function componentAdvice(c: AdviceComponent, h: AdviceHost): ComponentAdv
   }
   return { title, detail: c.key, note: 'Update the dependencies of this app.' }
 }
+
+export interface McpClientConfig {
+  id: string
+  label: string
+  /** Where the snippet goes: a terminal, or a config file path. */
+  where: string
+  snippet: string
+}
+
+/** Copy-ready MCP setup per AI client for a Streamable HTTP server behind a Bearer token. */
+export function mcpClientConfigs(url: string, token: string, name = 'netra-vuln'): McpClientConfig[] {
+  const auth = `Bearer ${token}`
+  const json = (v: unknown) => JSON.stringify(v, null, 2)
+  return [
+    { id: 'claude-code', label: 'Claude Code', where: 'Run in a terminal',
+      snippet: `claude mcp add --transport http ${name} ${url} --header "Authorization: ${auth}"` },
+    { id: 'codex', label: 'Codex', where: 'Add to ~/.codex/config.toml',
+      snippet: `[mcp_servers.${name}]\nurl = "${url}"\nhttp_headers = { Authorization = "${auth}" }` },
+    { id: 'opencode', label: 'OpenCode', where: 'Add to opencode.json (project) or ~/.config/opencode/opencode.json',
+      snippet: json({ $schema: 'https://opencode.ai/config.json', mcp: { [name]: { type: 'remote', url, headers: { Authorization: auth }, enabled: true } } }) },
+    { id: 'antigravity', label: 'Antigravity', where: 'Agent panel > MCP Servers > Manage > View raw config (mcp_config.json)',
+      snippet: json({ mcpServers: { [name]: { serverUrl: url, headers: { Authorization: auth } } } }) },
+    { id: 'cursor', label: 'Cursor', where: 'Add to ~/.cursor/mcp.json',
+      snippet: json({ mcpServers: { [name]: { url, headers: { Authorization: auth } } } }) },
+    { id: 'claude-desktop', label: 'Claude Desktop', where: 'Settings > Developer > Edit Config (claude_desktop_config.json); needs Node.js',
+      snippet: json({ mcpServers: { [name]: { command: 'npx', args: ['-y', 'mcp-remote', url, '--header', 'Authorization:${MCP_AUTH}'], env: { MCP_AUTH: auth } } } }) },
+    { id: 'other', label: 'Other', where: 'Any MCP client with Streamable HTTP',
+      snippet: `URL:    ${url}\nHeader: Authorization: ${auth}` },
+  ]
+}

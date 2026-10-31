@@ -10,6 +10,7 @@ import (
 	"netra-vuln/core/internal/delivery/http"
 	"netra-vuln/core/internal/delivery/http/middleware"
 	"netra-vuln/core/internal/delivery/http/route"
+	"netra-vuln/core/internal/delivery/mcp"
 	"netra-vuln/core/internal/repository"
 	"netra-vuln/core/internal/usecase"
 )
@@ -33,6 +34,7 @@ type UseCases struct {
 	Dashboard *usecase.DashboardUseCase
 	Auth      *usecase.AuthUseCase
 	AdminUser *usecase.AdminUserUseCase
+	McpToken  *usecase.McpTokenUseCase
 }
 
 // Bootstrap wires repositories, use cases, controllers, middleware, and routes.
@@ -45,6 +47,7 @@ func Bootstrap(config *BootstrapConfig) *UseCases {
 	findingRepository := repository.NewFindingRepository(config.Log)
 	adminUserRepository := repository.NewAdminUserRepository(config.Log)
 	adminSessionRepository := repository.NewAdminSessionRepository(config.Log)
+	mcpTokenRepository := repository.NewMcpTokenRepository(config.Log)
 
 	// setup use cases
 	uc := &UseCases{
@@ -56,6 +59,7 @@ func Bootstrap(config *BootstrapConfig) *UseCases {
 		Dashboard: usecase.NewDashboardUseCase(config.DB, config.Log, config.Validate, clientRepository, hostRepository, scanRepository, findingRepository),
 		Auth:      usecase.NewAuthUseCase(config.DB, config.Log, config.Validate, adminUserRepository, adminSessionRepository),
 		AdminUser: usecase.NewAdminUserUseCase(config.DB, config.Log, config.Validate, adminUserRepository),
+		McpToken:  usecase.NewMcpTokenUseCase(config.DB, config.Log, config.Validate, mcpTokenRepository),
 	}
 	if config.App == nil {
 		return uc
@@ -73,6 +77,7 @@ func Bootstrap(config *BootstrapConfig) *UseCases {
 	// setup middleware
 	hostAuthMiddleware := middleware.NewHostAuth(uc.Agent)
 	authMiddleware := middleware.NewSessionAuth(uc.Auth)
+	mcpAuthMiddleware := middleware.NewMcpAuth(uc.McpToken)
 
 	limits := config.Limits
 	if limits == (route.Limits{}) {
@@ -90,6 +95,9 @@ func Bootstrap(config *BootstrapConfig) *UseCases {
 		InstallController:   installController,
 		HostAuthMiddleware:  hostAuthMiddleware,
 		AuthMiddleware:      authMiddleware,
+		McpTokenController:  http.NewMcpTokenController(uc.McpToken, config.Log),
+		McpServer:           mcp.NewServer(&mcp.UseCases{Client: uc.Client, Host: uc.Host, Finding: uc.Finding}, config.Config.GetString("app.version")),
+		McpAuthMiddleware:   mcpAuthMiddleware,
 	}
 	routeConfig.Setup()
 	return uc

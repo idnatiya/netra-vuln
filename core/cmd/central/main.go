@@ -96,6 +96,7 @@ func run(args []string, viperConfig *viper.Viper, log *logrus.Logger) error {
 
 	if args[0] == "serve" {
 		app := config.NewFiber(viperConfig, log)
+		viperConfig.Set("app.version", version)
 		config.Bootstrap(&config.BootstrapConfig{DB: db, App: app, Log: log, Validate: validate, Config: viperConfig})
 		return serve(ctx, app, viperConfig.GetString("web.addr"), log)
 	}
