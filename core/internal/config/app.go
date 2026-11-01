@@ -79,6 +79,11 @@ func Bootstrap(config *BootstrapConfig) *UseCases {
 	authMiddleware := middleware.NewSessionAuth(uc.Auth)
 	mcpAuthMiddleware := middleware.NewMcpAuth(uc.McpToken)
 
+	allow, err := middleware.ParseCIDRs(config.Config.GetString("web.admin_allow_cidrs"))
+	if err != nil {
+		config.Log.Fatalf("CENTRAL_ADMIN_ALLOW_CIDRS: %v", err)
+	}
+
 	limits := config.Limits
 	if limits == (route.Limits{}) {
 		limits = route.DefaultLimits()
@@ -98,6 +103,8 @@ func Bootstrap(config *BootstrapConfig) *UseCases {
 		McpTokenController:  http.NewMcpTokenController(uc.McpToken, config.Log),
 		McpHandler:          mcp.NewHandler(&mcp.UseCases{Client: uc.Client, Host: uc.Host, Finding: uc.Finding}, config.Log, config.Config.GetString("app.version")),
 		McpAuthMiddleware:   mcpAuthMiddleware,
+		AdminAllow:          middleware.NewAllowCIDRs(allow),
+		DashboardDir:        config.Config.GetString("web.dashboard_dir"),
 		Log:                 config.Log,
 	}
 	routeConfig.Setup()

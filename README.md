@@ -28,14 +28,14 @@ host, and the exact command to fix it.
 ## Architecture
 
 ```
-  VM (per client)                              central (Docker Compose)
- ┌──────────────────┐   HTTPS push only    ┌───────┐    ┌──────────────┐    ┌───────┐
- │ vuln-agent       │ ───────────────────▶ │ Caddy │ ─▶ │ central API  │ ─▶ │ MySQL │
- │  + Trivy (daily) │  enroll / heartbeat  │  TLS  │    │ (Go, Fiber)  │    └───────┘
- └──────────────────┘  config / report     │       │    └──────────────┘        │
-                                           │       │ ─▶ dashboard SPA (Vue)     ▼
-  admin browser ─────────────────────────▶ │       │                       daily backup
-  AI client (MCP) ───────────────────────▶ └───────┘
+  VM (per client)                          your HTTPS             central (Docker Compose)
+ ┌──────────────────┐  HTTPS push only   ┌──────────────┐    ┌─────────────────────┐    ┌───────┐
+ │ vuln-agent       │ ─────────────────▶ │ reverse      │ ─▶ │ central (Go, Fiber) │ ─▶ │ MySQL │
+ │  + Trivy (daily) │ enroll / heartbeat │ proxy        │    │  API + dashboard    │    └───────┘
+ └──────────────────┘  config / report   │ (nginx,      │    │  SPA (Vue)          │        │
+  admin browser ───────────────────────▶ │  Traefik,    │    └─────────────────────┘        ▼
+  AI client (MCP) ─────────────────────▶ │  tailscale…) │                              daily backup
+                                         └──────────────┘
 ```
 
 - **Passive agent**: it only sends data and reads declarative config. Central cannot run commands on a VM.
@@ -45,24 +45,39 @@ host, and the exact command to fix it.
 
 ## Deploy central
 
-Requirements: a Linux server with Docker Compose and a DNS name pointing at it (ports 80/443 open for Let's Encrypt).
+Requirements: a Linux server with Docker Compose, and an HTTPS reverse proxy you already run
+(nginx, Traefik, Cloudflare Tunnel, `tailscale serve`, ...). The dashboard needs HTTPS: the session cookie is `Secure`.
 
 ```sh
-cd deploy/central
-cp .env.example .env        # set CENTRAL_DOMAIN, ACME_EMAIL, MySQL passwords (openssl rand -base64 32)
+cp .env.example .env        # set CENTRAL_PUBLIC_URL and the MySQL passwords (openssl rand -base64 32)
 docker compose up -d --build
 docker compose exec central central admin create <name>   # first admin (prompts for a password)
 ```
 
-Open `https://<CENTRAL_DOMAIN>` and sign in. Useful `.env` settings:
+Central (API and dashboard) listens on `CENTRAL_PORT` (default `127.0.0.1:8080`). Point the proxy at it,
+for example with nginx:
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    client_max_body_size 25m;   # reports are up to 20 MB
+}
+```
+
+Open `CENTRAL_PUBLIC_URL` and sign in. Useful `.env` settings:
 
 | Variable | Purpose |
 | --- | --- |
+| `CENTRAL_PUBLIC_URL` | URL VMs and browsers use to reach central (the proxy's URL) |
+| `CENTRAL_PORT` | Host address central listens on; keep it on 127.0.0.1 or a private interface |
 | `ADMIN_ALLOW_CIDRS` | Networks allowed to reach the dashboard, admin API and `/mcp` (agents are never restricted) |
 | `CENTRAL_AGENT_VERSION` | Agent release served by the one-line installer (`/install.sh`); empty disables it |
-| `CENTRAL_PUBLIC_URL` | URL VMs use to reach central, if not `https://CENTRAL_DOMAIN` (e.g. a Tailscale IP) |
 | `BACKUP_AT`, `BACKUP_KEEP_DAYS` | Daily `mysqldump` into `./backups` |
 
+The proxy must send `Host` unchanged (the admin API checks a same-origin `Origin`) and `X-Forwarded-For`
+(client IPs for the login limit and `ADMIN_ALLOW_CIDRS`; trusted only from private/loopback addresses).
 Migrations run automatically on start (`migrate` service). More admins: `docker compose exec central central admin create|passwd|list`.
 
 ## Enroll a VM
@@ -101,7 +116,7 @@ make help    # all targets
 
 `make dev` seeds admin `admin` (password in `dev-out/admin-password`). Admin CLI on the dev DB:
 `make central ARGS="client list"`. Layout: `core/` (Go API, migrations, black-box tests in `core/test`),
-`dashboard/` (Vue 3 + shadcn-vue), `deploy/` (Compose, Caddy, dev MySQL).
+`dashboard/` (Vue 3 + shadcn-vue), `Dockerfile` / `docker-compose.yml` (production), `compose.dev.yml` (dev MySQL).
 
 ## Security and data retention
 
@@ -120,4 +135,5 @@ make help    # all targets
 | Enroll returns 409 | The hostname is already active for that client. Revoke it first, then enroll with a new token. |
 | Enroll returns 401 | Unknown client, or the enroll token was already used, belongs to another client, or is wrong. Generate a new one. |
 | Host shows "not reporting" | No heartbeat for over an hour: check `systemctl status vuln-agent-*` and network access to central. |
-| Dashboard 403 | Your IP is outside `ADMIN_ALLOW_CIDRS`. |
+| Dashboard 403 | Your IP is outside `ADMIN_ALLOW_CIDRS` (or the proxy does not send `X-Forwarded-For`). |
+| Login succeeds but you stay on the login page | The dashboard is served over plain HTTP; the `Secure` session cookie needs HTTPS. |

@@ -1,4 +1,6 @@
-# Central stack: MySQL + central API + Caddy (HTTPS + dashboard) + daily backups.
+# Central stack: MySQL + central (API + dashboard) + daily backups.
+# Put your own HTTPS reverse proxy in front of CENTRAL_PORT (the session
+# cookie is Secure, so the dashboard needs HTTPS).
 #   cp .env.example .env   # fill in secrets
 #   docker compose up -d --build
 #   docker compose exec central central admin create <username>
@@ -24,8 +26,7 @@ services:
 
   migrate:
     build: &central_build
-      context: ../..
-      dockerfile: deploy/central/central.Dockerfile
+      context: .
       args:
         VERSION: ${CENTRAL_VERSION:-dev}
     image: vuln-central:${CENTRAL_VERSION:-dev}
@@ -42,12 +43,16 @@ services:
     image: vuln-central:${CENTRAL_VERSION:-dev}
     command: ["serve"]
     restart: unless-stopped
+    ports:
+      - "${CENTRAL_PORT:-127.0.0.1:8080}:8080"
     environment:
       <<: *central_env
       CENTRAL_ADDR: ":8080"
-      CENTRAL_TRUST_PROXY: "true"
+      # Client IPs come from the proxy's X-Forwarded-For (trusted from private/loopback addresses only).
+      CENTRAL_TRUST_PROXY: ${CENTRAL_TRUST_PROXY:-true}
+      CENTRAL_ADMIN_ALLOW_CIDRS: ${ADMIN_ALLOW_CIDRS:-}
       # /install.sh (dashboard: Add agent) needs both; empty version = disabled.
-      CENTRAL_PUBLIC_URL: ${CENTRAL_PUBLIC_URL:-https://${CENTRAL_DOMAIN}}
+      CENTRAL_PUBLIC_URL: ${CENTRAL_PUBLIC_URL:?set in .env}
       CENTRAL_AGENT_VERSION: ${CENTRAL_AGENT_VERSION:-}
     depends_on:
       migrate:
@@ -59,27 +64,6 @@ services:
       retries: 6
       start_period: 10s
 
-  caddy:
-    build:
-      context: ../..
-      dockerfile: deploy/central/caddy.Dockerfile
-    image: vuln-central-caddy:${CENTRAL_VERSION:-dev}
-    restart: unless-stopped
-    ports:
-      - "${HTTP_PORT:-80}:80"
-      - "${HTTPS_PORT:-443}:443"
-      - "${HTTPS_PORT:-443}:443/udp"
-    environment:
-      CENTRAL_DOMAIN: ${CENTRAL_DOMAIN:?set in .env}
-      ACME_EMAIL: ${ACME_EMAIL:?set in .env (Let's Encrypt account email)}
-      ADMIN_ALLOW_CIDRS: ${ADMIN_ALLOW_CIDRS:-0.0.0.0/0 ::/0}
-    volumes:
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      central:
-        condition: service_healthy
-
   backup:
     image: mysql:8.4.7
     restart: unless-stopped
@@ -90,7 +74,7 @@ services:
       BACKUP_AT: ${BACKUP_AT:-02:30}
       BACKUP_RUN_NOW: ${BACKUP_RUN_NOW:-0}
     volumes:
-      - ./backup.sh:/backup.sh:ro
+      - ./scripts/backup.sh:/backup.sh:ro
       - ./backups:/backups
     depends_on:
       migrate:
@@ -98,5 +82,3 @@ services:
 
 volumes:
   mysql_data:
-  caddy_data:
-  caddy_config:

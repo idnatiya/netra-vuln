@@ -34,10 +34,12 @@ const usage = `usage: central <command>
 environment (or config.json in ./ or ./core):
   CENTRAL_DSN          MySQL DSN, e.g. user:pass@tcp(mysql:3306)/vuln   (required)
   CENTRAL_ADDR         listen address for serve (default :8080)
-  CENTRAL_TRUST_PROXY  "true" behind Caddy: client IP from X-Forwarded-For (private-network proxies)
+  CENTRAL_TRUST_PROXY  "true" behind a reverse proxy: client IP from X-Forwarded-For (private-network proxies)
   CENTRAL_LOG_LEVEL    logrus level 0-6 (default 4 = info)
   CENTRAL_PUBLIC_URL     URL VMs use to reach central; with CENTRAL_AGENT_VERSION enables /install.sh
   CENTRAL_AGENT_VERSION  agent release tag /install.sh downloads, e.g. v0.3.0
+  CENTRAL_DASHBOARD_DIR  built dashboard SPA to serve (the image sets /srv/dashboard)
+  CENTRAL_ADMIN_ALLOW_CIDRS  CIDRs allowed to reach the dashboard, admin API and /mcp (empty = all)
 
 commands:
   serve                                    run the API server

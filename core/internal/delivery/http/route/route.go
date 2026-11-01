@@ -3,10 +3,13 @@ package route
 
 import (
 	nethttp "net/http"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/adaptor"
+	"github.com/gofiber/fiber/v3/middleware/static"
 	"github.com/sirupsen/logrus"
 
 	"netra-vuln/core/internal/delivery/http"
@@ -18,7 +21,7 @@ type Limits struct {
 	Window     time.Duration
 	PerHostMax int // per authenticated host
 	// Global caps for unauthenticated work (enroll, token lookups).
-	// ponytail: global because behind Caddy every request comes from the proxy IP;
+	// ponytail: global because behind a reverse proxy every request may come from the proxy IP;
 	// switch to per-IP via a trusted X-Forwarded-For if abuse ever shows up.
 	EnrollMax int
 	AuthMax   int
@@ -47,14 +50,40 @@ type RouteConfig struct {
 	HostAuthMiddleware  fiber.Handler
 	AuthMiddleware      fiber.Handler
 	McpAuthMiddleware   fiber.Handler
+	AdminAllow          fiber.Handler // ADMIN_ALLOW_CIDRS: dashboard, admin API, MCP
+	DashboardDir        string        // built SPA; empty = not served (dev uses Vite)
 	Log                 *logrus.Logger
 }
 
 func (c *RouteConfig) Setup() {
+	c.App.Use(middleware.NewSecurityHeaders())
 	c.SetupAgentRoute()
 	c.SetupAdminGuestRoute()
 	c.SetupAdminAuthRoute()
 	c.SetupMcpRoute()
+	c.SetupDashboard() // last: its catch-all serves index.html for SPA routes
+}
+
+// SetupDashboard serves the built SPA, falling back to index.html for client routes.
+func (c *RouteConfig) SetupDashboard() {
+	if c.DashboardDir == "" {
+		return
+	}
+	index := filepath.Join(c.DashboardDir, "index.html")
+	c.App.Get("/*", c.AdminAllow, static.New(c.DashboardDir, static.Config{
+		ModifyResponse: func(ctx fiber.Ctx) error {
+			if strings.HasPrefix(ctx.Path(), "/assets/") { // hashed file names
+				ctx.Set(fiber.HeaderCacheControl, "public, max-age=31536000, immutable")
+			}
+			return nil
+		},
+		NotFoundHandler: func(ctx fiber.Ctx) error {
+			if strings.HasPrefix(ctx.Path(), "/api/") {
+				return fiber.ErrNotFound
+			}
+			return ctx.Status(fiber.StatusOK).SendFile(index)
+		},
+	}))
 }
 
 // SetupMcpRoute is the MCP endpoint for AI clients (Bearer MCP token, read-only tools).
@@ -64,7 +93,7 @@ func (c *RouteConfig) SetupMcpRoute() {
 	if mcpMax == 0 {
 		mcpMax = 600
 	}
-	c.App.All("/mcp", middleware.NewRateLimit(mcpMax, l.Window, middleware.ConstKey("mcp")),
+	c.App.All("/mcp", c.AdminAllow, middleware.NewRateLimit(mcpMax, l.Window, middleware.ConstKey("mcp")),
 		middleware.NewSmallBody(), c.McpAuthMiddleware,
 		middleware.NewMcpRateLimit(mcpMax, l.Window, c.Log),
 		adaptor.HTTPHandlerWithContext(c.McpHandler))
@@ -89,14 +118,14 @@ func (c *RouteConfig) SetupAgentRoute() {
 
 // SetupAdminGuestRoute is the dashboard API reachable without a session.
 func (c *RouteConfig) SetupAdminGuestRoute() {
-	admin := c.App.Group("/api/admin/v1", middleware.NewSameOrigin(), middleware.NewSmallBody())
+	admin := c.App.Group("/api/admin/v1", c.AdminAllow, middleware.NewSameOrigin(), middleware.NewSmallBody())
 	admin.Post("/login", middleware.NewRateLimit(c.Limits.LoginMax, time.Minute, middleware.IPKey("login:")), c.AuthController.Login)
 	admin.Post("/logout", c.AuthController.Logout)
 }
 
 // SetupAdminAuthRoute is the dashboard API behind the session cookie.
 func (c *RouteConfig) SetupAdminAuthRoute() {
-	admin := c.App.Group("/api/admin/v1", middleware.NewSameOrigin(), middleware.NewSmallBody(), c.AuthMiddleware)
+	admin := c.App.Group("/api/admin/v1", c.AdminAllow, middleware.NewSameOrigin(), middleware.NewSmallBody(), c.AuthMiddleware)
 	admin.Get("/me", c.AuthController.Current)
 	admin.Post("/me/password", middleware.NewRateLimit(c.Limits.LoginMax, time.Minute, middleware.IPKey("password:")),
 		c.AuthController.ChangePassword)

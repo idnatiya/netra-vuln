@@ -31,7 +31,6 @@ coverage.*
 /dashboard/dist/
 
 # Central compose runtime data
-/deploy/central/backups/
-/deploy/central/.env
+/backups/
 /go.work
 /go.work.sum

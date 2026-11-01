@@ -23,7 +23,7 @@ func NewFiber(config *viper.Viper, log *logrus.Logger) *fiber.App {
 		IdleTimeout:  2 * time.Minute,
 	}
 	// TrustProxy makes ctx.IP() use X-Forwarded-For from private-network proxies
-	// (Caddy in the compose network). Leave false when clients connect directly.
+	// (the reverse proxy in front). Leave false when clients connect directly.
 	if config.GetBool("web.trust_proxy") {
 		cfg.TrustProxy = true
 		cfg.ProxyHeader = fiber.HeaderXForwardedFor

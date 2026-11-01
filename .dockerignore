@@ -5,7 +5,7 @@ dist
 dashboard/dist
 dev-out
 .playwright-mcp
-deploy/central/backups
-deploy/central/.env
+backups
+.env
 **/*.env
 !**/.env.example

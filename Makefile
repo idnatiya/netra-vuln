@@ -1,4 +1,4 @@
-MYSQL_COMPOSE := docker compose -f deploy/dev/mysql.compose.yml
+MYSQL_COMPOSE := docker compose -f compose.dev.yml
 TEST_MYSQL_DSN ?= root:test@tcp(127.0.0.1:3317)/
 CENTRAL_DSN ?= root:test@tcp(127.0.0.1:3317)/vuln
 # The laptop's Tailscale IP when available (so tailnet VMs can report), else local only.
@@ -82,9 +82,9 @@ test: dashboard-test mysql-up ## Dashboard tests + Go vet + Go tests (core/test 
 	go vet ./...
 	TEST_MYSQL_DSN='$(TEST_MYSQL_DSN)' go test -count=1 ./...
 
-# --- Production stack (deploy/central/.env must exist; see .env.example) -----
+# --- Production stack (.env must exist; see .env.example) -----
 
-COMPOSE := docker compose -f deploy/central/docker-compose.yml --env-file deploy/central/.env
+COMPOSE := docker compose
 
 compose-up: ## Build and start the production stack
 	$(COMPOSE) up -d --build

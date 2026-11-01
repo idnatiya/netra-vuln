@@ -24,17 +24,17 @@ Work in phases (see "Phases"). At the end of each phase, stop and show the resul
 - Central HTTP: **Fiber v3** (fasthttp)
 - Database: **MySQL 8**
 - Central libraries (after [khannedy/golang-clean-architecture](https://github.com/khannedy/golang-clean-architecture)): GORM (mysql driver), Viper, Logrus (JSON), go-playground/validator, golang-migrate (embedded `iofs`), testify
-- Dashboard: **Vue 3 + Vite + TypeScript + Tailwind v4 + shadcn-vue** SPA in `/dashboard` (admin only), served by Caddy, talking to central's `/api/admin/v1`
-- Central deployment: **Docker Compose** (central API + MySQL + Caddy for TLS and the dashboard SPA + daily backup)
+- Dashboard: **Vue 3 + Vite + TypeScript + Tailwind v4 + shadcn-vue** SPA in `/dashboard` (admin only), built into the central image and served by central, talking to its `/api/admin/v1`
+- Central deployment: **Docker Compose** (central API with the dashboard SPA + MySQL + daily backup); TLS comes from the operator's own reverse proxy
 - CI: **GitLab CI** (`.gitlab-ci.yml`)
 
 ## Repo Layout
 Go module `netra-vuln` (requires `github.com/idnatiya/netra-vuln-agent` for the contract).
 ```
 /core         # central API Go code (cmd, db/migrations, internal, test)
-/deploy
-  /central    # docker-compose.yml, Dockerfiles, Caddyfile, backup.sh, .env.example
-  /dev        # mysql.compose.yml for make dev / tests
+/scripts      # backup.sh (compose backup service)
+Dockerfile, docker-compose.yml, .env.example   # production stack
+compose.dev.yml                                # MySQL for make dev / tests
 /dashboard    # admin SPA (Vue + shadcn-vue, clean architecture)
 /docs         # README, architecture, install guide
 .gitlab-ci.yml
@@ -89,7 +89,7 @@ Admin API (`/api/admin/v1/*`) responses use `model.WebResponse{data, paging, err
 - Validate that a host can only write to its own client
 - Simple per-token rate limiting
 - Request size limits, read/write timeouts
-- TLS is handled by the reverse proxy (Caddy); for Tailscale-only deployments central may listen on plain HTTP bound to the tailnet interface only
+- TLS is handled by the operator's reverse proxy in front of central (nginx, Traefik, `tailscale serve`, ...); central listens on plain HTTP bound to 127.0.0.1 or a private interface. Central itself sets the security headers (CSP, HSTS, frame/nosniff/referrer) and enforces `CENTRAL_ADMIN_ALLOW_CIDRS` on the dashboard, `/api/admin` and `/mcp` (agents never restricted)
 
 ### MySQL schema (as migrations)
 - `clients` (id, name unique, scan_config JSON NULL, created_at)
@@ -118,7 +118,7 @@ Admin-only SPA; admins see every client (no per-client logins). Dark only, palet
 Rules:
 - Components (`domain.Finding.Component`, stored at ingest and refreshed every scan) group findings into one upgrade action each: `os` = OS packages with the same installed version (one source package, e.g. all `linux-*` kernel pieces; shown as "Linux kernel" + reboot hint), `app` = language packages under one application folder (from Trivy's `PkgPath`, cut before `vendor/`, `node_modules/`, `site-packages/`, `.venv/`, `WEB-INF/`…; package caches like `.m2`/`.cache` group as the cache), `binary` = one Go/Rust binary. `POST /api/admin/v1/components/triage` applies one verdict to every unresolved finding of a component. Host rows carry `new_in_last_scan` / `resolved_in_last_scan` (findings whose `first_seen` / `resolved_at` equal the host's last successful `last_scan_at`) and `first_scan`.
 - "Open" = `resolved_at IS NULL AND status = 'open'`. Triage (`accepted` / `false_positive`) takes an optional note and survives re-scans; it never deletes data.
-- Auth: `admin_users` (bcrypt) + `admin_sessions` (SHA-256 token hash, 12h, plus login IP and User-Agent for the Account page). Cookie `vuln_session`: HttpOnly, Secure, SameSite=Strict, Path=/api/admin. State-changing requests must send a same-origin `Origin` (CSRF). Login limited per client IP; behind Caddy set `CENTRAL_TRUST_PROXY=true`.
+- Auth: `admin_users` (bcrypt) + `admin_sessions` (SHA-256 token hash, 12h, plus login IP and User-Agent for the Account page). Cookie `vuln_session`: HttpOnly, Secure, SameSite=Strict, Path=/api/admin. State-changing requests must send a same-origin `Origin` (CSRF). Login limited per client IP; behind a reverse proxy set `CENTRAL_TRUST_PROXY=true` (compose default).
 - Admins are created with the CLI only: `central admin create|passwd|list` (no sign-up).
 - Admin API JSON shapes live in `core/internal/model` (not part of the agent contract in the agent module's `wire`); the dashboard's `apis/http.ts` unwraps `data` and reads `paging` / `errors`.
 - Dashboard structure: `src/types` contains models, `src/lib` contains pure rules, `src/apis` contains HTTP access and validation, and `src/pages`, `src/components`, and `src/composables` contain the UI. Views never call `fetch`.
@@ -126,12 +126,12 @@ Rules:
 
 ## MCP
 - `/mcp` is a read-only MCP server (Streamable HTTP, stateless, JSON responses; official `github.com/modelcontextprotocol/go-sdk`) in `core/internal/delivery/mcp`. Tools `list_clients`, `list_hosts`, `search_findings` (25/page), `host_components` call the same use cases as the admin API and return its models.
-- Auth: `Authorization: Bearer <mcp token>` (`mcp_tokens`, SHA-256 hash, bound to the admin who created it, `last_used_at` at most once a minute, revoke = `revoked_at`). Own rate limit (`Limits.McpMax`, default 600/min per admin and in total), separate from the agent limits; hits are logged (`MCP rate limited`). `search_findings` takes `page_size` 1-100 (default 25). Caddy serves `/mcp` behind `ADMIN_ALLOW_CIDRS`.
+- Auth: `Authorization: Bearer <mcp token>` (`mcp_tokens`, SHA-256 hash, bound to the admin who created it, `last_used_at` at most once a minute, revoke = `revoked_at`). Own rate limit (`Limits.McpMax`, default 600/min per admin and in total), separate from the agent limits; hits are logged (`MCP rate limited`). `search_findings` takes `page_size` 1-100 (default 25). `/mcp` is behind `ADMIN_ALLOW_CIDRS`.
 - Tokens are read-only unless created with "Allow triage" (`mcp_tokens.can_triage`): only then `triage_finding` / `triage_component` are listed (destructive hint, so clients confirm). Their notes get `[via MCP: <token name>]` and central logs each verdict. The server is built per request from the token's `Auth`. No LLM calls inside central.
 
 ## Deployment
-- `deploy/central/docker-compose.yml`: `mysql` (named volume), `migrate` (one-shot `central migrate`), `central` (distroless, healthcheck `central healthcheck`), `caddy` (automatic HTTPS, serves the dashboard SPA, proxies `/api/*`; optional `ADMIN_ALLOW_CIDRS` for the dashboard), `backup` (daily `mysqldump` into `./backups`, `BACKUP_KEEP_DAYS`). Configure via `.env` (from `.env.example`); first admin: `docker compose exec central central admin create <name>`. `.dockerignore` keeps `dev-out/` and other local data out of the build context.
-- Local dev: `make dev` runs MySQL (127.0.0.1:3317, tmpfs, `deploy/dev/mysql.compose.yml`) + central (port 18080: Tailscale IP if up, else 127.0.0.1) + the dashboard (http://localhost:11270) in one terminal; Ctrl+C stops all, and if either process dies the other is stopped too. It migrates and seeds admin `admin` once (password in `dev-out/admin-password`). `make help` lists targets; `make dev-down` drops the dev DB; admin CLI via `make central ARGS="..."`.
+- `docker-compose.yml` (repo root, image from `Dockerfile`): `mysql` (named volume), `migrate` (one-shot `central migrate`), `central` (distroless, dashboard SPA baked in at `/srv/dashboard`, published on `CENTRAL_PORT`, default `127.0.0.1:8080`, for the operator's HTTPS reverse proxy; the session cookie is Secure, so the dashboard needs HTTPS; optional `ADMIN_ALLOW_CIDRS`; healthcheck `central healthcheck`), `backup` (`scripts/backup.sh`: daily `mysqldump` into `./backups`, `BACKUP_KEEP_DAYS`). Configure via `.env` (from `.env.example`); first admin: `docker compose exec central central admin create <name>`. `.dockerignore` keeps `dev-out/` and other local data out of the build context.
+- Local dev: `make dev` runs MySQL (127.0.0.1:3317, tmpfs, `compose.dev.yml`) + central (port 18080: Tailscale IP if up, else 127.0.0.1) + the dashboard (http://localhost:11270) in one terminal; Ctrl+C stops all, and if either process dies the other is stopped too. It migrates and seeds admin `admin` once (password in `dev-out/admin-password`). `make help` lists targets; `make dev-down` drops the dev DB; admin CLI via `make central ARGS="..."`.
 - Sample VM loop over Tailscale: `make dev` listens on the laptop's Tailscale IP when `tailscale` is up (else `127.0.0.1:18080`; override with `CENTRAL_ADDR`), create the client in the dashboard, then in the agent repo `make scan-dev ARGS="-e @<enroll-vars.yml>"` (a mode-600 file with `vuln_agent_enroll_token`, never committed; add `-e vuln_agent_force_enroll=true` after the dev DB was reset).
 - Tests: `make test` (dashboard tests, starts the dev MySQL, `go vet`, Go tests with `TEST_MYSQL_DSN`; the suite recreates database `vuln_test`).
 

@@ -19,6 +19,8 @@ import (
 //	CENTRAL_LOG_LEVEL    log.level (logrus level, 4 = info)
 //	CENTRAL_PUBLIC_URL     web.public_url (URL VMs use to reach central; enables /install.sh)
 //	CENTRAL_AGENT_VERSION  agent.version (agent release tag /install.sh downloads)
+//	CENTRAL_DASHBOARD_DIR  web.dashboard_dir (built SPA to serve; empty = none)
+//	CENTRAL_ADMIN_ALLOW_CIDRS web.admin_allow_cidrs (dashboard/admin/MCP clients; empty = all)
 func NewViper() *viper.Viper {
 	config := viper.New()
 	config.SetConfigName("config")
@@ -35,12 +37,14 @@ func NewViper() *viper.Viper {
 	config.SetDefault("database.pool.lifetime", 300)
 
 	for key, env := range map[string]string{
-		"database.dsn":    "CENTRAL_DSN",
-		"web.addr":        "CENTRAL_ADDR",
-		"web.trust_proxy": "CENTRAL_TRUST_PROXY",
-		"log.level":       "CENTRAL_LOG_LEVEL",
-		"web.public_url":  "CENTRAL_PUBLIC_URL",
-		"agent.version":   "CENTRAL_AGENT_VERSION",
+		"database.dsn":          "CENTRAL_DSN",
+		"web.addr":              "CENTRAL_ADDR",
+		"web.trust_proxy":       "CENTRAL_TRUST_PROXY",
+		"log.level":             "CENTRAL_LOG_LEVEL",
+		"web.public_url":        "CENTRAL_PUBLIC_URL",
+		"agent.version":         "CENTRAL_AGENT_VERSION",
+		"web.dashboard_dir":     "CENTRAL_DASHBOARD_DIR",
+		"web.admin_allow_cidrs": "CENTRAL_ADMIN_ALLOW_CIDRS",
 	} {
 		_ = config.BindEnv(key, env)
 	}
