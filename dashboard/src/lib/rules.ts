@@ -212,3 +212,22 @@ export function eolLabel(s: Pick<Software, 'status' | 'eol' | 'product' | 'cycle
     default: return s.product && !s.cycle ? 'unknown cycle' : 'not tracked'
   }
 }
+
+const semver = /^v?(\d+)\.(\d+)\.(\d+)$/
+
+/** True when current is an older release than latest; false if either is not vX.Y.Z (e.g. "dev"). */
+export function isAgentOutdated(current: string, latest: string): boolean {
+  const a = semver.exec(current)
+  const b = semver.exec(latest)
+  if (!a || !b) return false
+  for (let i = 1; i <= 3; i++) {
+    const d = Number(a[i]) - Number(b[i])
+    if (d !== 0) return d < 0
+  }
+  return false
+}
+
+/** Re-running the installer upgrades the agent in place and keeps its enrollment. */
+export function agentUpgradeCommand(publicUrl: string, client: string): string {
+  return `curl -fsSL '${publicUrl}/install.sh' | sudo sh -s -- '${client}'\nsudo systemctl start vuln-agent-scan.service`
+}

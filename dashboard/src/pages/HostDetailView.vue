@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { Ban, ChevronLeft, ChevronRight } from '@lucide/vue'
+import { Ban, Check, ChevronLeft, ChevronRight, Copy } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import type { Component, ComponentFilter, Finding, FindingFilter, TriageStatus } from '@/types/models'
-import { hostIssues, pageCount } from '@/lib/rules'
+import { agentUpgradeCommand, hostIssues, isAgentOutdated, pageCount } from '@/lib/rules'
 import ClientChip from '@/components/ClientChip.vue'
 import ComponentItem from '@/components/ComponentItem.vue'
 import ComponentTriageDialog from '@/components/ComponentTriageDialog.vue'
@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { useBreadcrumbs } from '@/composables/breadcrumbs'
-import { useComponents, useDeleteHost, useFindings, useHostSoftware, useHosts, useRevokeHost } from '@/composables/queries'
+import { useComponents, useDeleteHost, useFindings, useHostSoftware, useHosts, useInstallInfo, useRevokeHost } from '@/composables/queries'
 import { errorMessage, formatDateTime, formatNumber, plural, relative } from '@/lib/format'
 
 const route = useRoute()
@@ -52,6 +52,22 @@ const tabs = computed(() => [
   { value: 'software' as const, label: 'Software', count: host.value?.eol.length || undefined },
 ])
 const software = useHostSoftware(id)
+const install = useInstallInfo()
+const upgrade = computed(() => {
+  const info = install.data.value
+  if (!host.value || host.value.revokedAt || !info?.enabled || !isAgentOutdated(host.value.agentVersion, info.agentVersion)) return null
+  return { latest: info.agentVersion, command: agentUpgradeCommand(info.publicUrl, host.value.client) }
+})
+const upgradeCopied = ref(false)
+async function copyUpgrade() {
+  try {
+    await navigator.clipboard.writeText(upgrade.value!.command)
+    upgradeCopied.value = true
+    setTimeout(() => (upgradeCopied.value = false), 1500)
+  } catch {
+    toast.error('Could not copy the upgrade command.')
+  }
+}
 
 const triaging = ref<{ component: Component, title: string } | null>(null)
 const triagingFinding = ref<Finding | null>(null)
@@ -203,7 +219,14 @@ const findingGrid = 'grid grid-cols-[minmax(0,1fr)_4.5rem] items-center gap-x-4 
           <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5">
             <dt class="text-muted-foreground">Client</dt><dd class="truncate text-right">{{ host.client }}</dd>
             <dt class="text-muted-foreground">Heartbeat</dt><dd class="truncate text-right" :title="formatDateTime(host.lastHeartbeatAt)">{{ relative(host.lastHeartbeatAt) }}</dd>
-            <dt class="text-muted-foreground">Agent</dt><dd class="truncate text-right">{{ host.agentVersion || '?' }}</dd>
+            <dt class="text-muted-foreground">Agent</dt>
+            <dd v-if="!upgrade" class="truncate text-right">{{ host.agentVersion || '?' }}</dd>
+            <dd v-else class="text-right">
+              {{ host.agentVersion }} → <span class="text-gold">{{ upgrade.latest }}</span>
+              <button type="button" class="ml-auto flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground" @click="copyUpgrade">
+                <component :is="upgradeCopied ? Check : Copy" class="size-3.5" />{{ upgradeCopied ? 'Copied' : 'Copy upgrade command' }}
+              </button>
+            </dd>
             <dt class="text-muted-foreground">Trivy</dt><dd class="truncate text-right">{{ host.trivyVersion || '?' }}</dd>
             <dt class="text-muted-foreground">Accepted</dt><dd class="text-right">{{ plural(host.accepted, 'finding') }}</dd>
             <dt class="text-muted-foreground">False positive</dt><dd class="text-right">{{ plural(host.falsePositive, 'finding') }}</dd>

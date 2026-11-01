@@ -16,6 +16,12 @@ export function useHostSoftware(id: Ref<number>) {
   return useQuery({ queryKey: ['hosts', 'software', id], queryFn: () => uc.hostSoftware(id.value) })
 }
 
+/** Installer settings; agentVersion is the latest agent central hands out. */
+export function useInstallInfo() {
+  const uc = useUseCases()
+  return useQuery({ queryKey: ['install-info'], queryFn: () => uc.installInfo(), staleTime: 5 * 60_000 })
+}
+
 export function useClients() {
   const uc = useUseCases()
   return useQuery({ queryKey: ['clients'], queryFn: () => uc.listClients() })

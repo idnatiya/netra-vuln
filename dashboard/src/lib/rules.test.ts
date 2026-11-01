@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Host } from '@/types/models'
-import { componentAdvice, dailyTotals, eolLabel, daysSince, hostHealth, hostIssues, hostLevel, inHostTab, isRunningKernel, isValidClientName, mcpClientConfigs, pageCount, worstFirst } from './rules'
+import { agentUpgradeCommand, componentAdvice, dailyTotals, eolLabel, isAgentOutdated, daysSince, hostHealth, hostIssues, hostLevel, inHostTab, isRunningKernel, isValidClientName, mcpClientConfigs, pageCount, worstFirst } from './rules'
 
 const base: Host = {
   id: 1, client: 'a', hostname: 'vm', osFamily: 'debian', osName: 'Ubuntu', osVersion: '24.04', arch: 'amd64',
@@ -156,5 +156,21 @@ describe('eolLabel', () => {
     expect(eolLabel({ status: 'supported', eol: '2027-12-31', product: 'php', cycle: '8.3' }, now)).toBe('until 2027-12-31')
     expect(eolLabel({ status: 'unknown', eol: '', product: '', cycle: '' }, now)).toBe('not tracked')
     expect(eolLabel({ status: 'unknown', eol: '', product: 'php', cycle: '' }, now)).toBe('unknown cycle')
+  })
+})
+
+describe('agent upgrade', () => {
+  it('compares vX.Y.Z numerically and ignores non-releases', () => {
+    expect(isAgentOutdated('v0.2.1', 'v0.3.0')).toBe(true)
+    expect(isAgentOutdated('v0.9.0', 'v0.10.0')).toBe(true)
+    expect(isAgentOutdated('v0.3.0', 'v0.3.0')).toBe(false)
+    expect(isAgentOutdated('v0.4.0', 'v0.3.0')).toBe(false)
+    expect(isAgentOutdated('dev', 'v0.3.0')).toBe(false)
+    expect(isAgentOutdated('', 'v0.3.0')).toBe(false)
+    expect(isAgentOutdated('v0.2.1', '')).toBe(false)
+  })
+  it('re-runs the installer for the client, then scans', () => {
+    expect(agentUpgradeCommand('https://vuln.example.com', 'acme'))
+      .toBe("curl -fsSL 'https://vuln.example.com/install.sh' | sudo sh -s -- 'acme'\nsudo systemctl start vuln-agent-scan.service")
   })
 })
