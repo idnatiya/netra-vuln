@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Host } from '@/types/models'
-import { componentAdvice, dailyTotals, daysSince, hostHealth, hostIssues, hostLevel, inHostTab, isRunningKernel, isValidClientName, mcpClientConfigs, pageCount, worstFirst } from './rules'
+import { componentAdvice, dailyTotals, eolLabel, daysSince, hostHealth, hostIssues, hostLevel, inHostTab, isRunningKernel, isValidClientName, mcpClientConfigs, pageCount, worstFirst } from './rules'
 
 const base: Host = {
   id: 1, client: 'a', hostname: 'vm', osFamily: 'debian', osName: 'Ubuntu', osVersion: '24.04', arch: 'amd64',
@@ -8,6 +8,7 @@ const base: Host = {
   lastHeartbeatAt: new Date(), lastScanAt: new Date(), lastScanStatus: 'ok', lastOkScanAt: new Date(),
   createdAt: new Date(), revokedAt: null, openCritical: 0, openHigh: 0, accepted: 0, falsePositive: 0,
   staleScan: false, staleHeartbeat: false, newInLastScan: 0, resolvedInLastScan: 0, firstScan: false,
+  eol: [], eolSoon: [],
 }
 
 describe('hostHealth', () => {
@@ -15,6 +16,8 @@ describe('hostHealth', () => {
     expect(hostHealth(base)).toBe('healthy')
     expect(hostHealth({ ...base, openCritical: 1 })).toBe('attention')
     expect(hostHealth({ ...base, autoUpdateEnabled: false })).toBe('attention')
+    expect(hostHealth({ ...base, eol: ['php 7.4'] })).toBe('attention')
+    expect(hostHealth({ ...base, eolSoon: ['nodejs 20'] })).toBe('healthy')
     expect(hostHealth({ ...base, staleHeartbeat: true, openCritical: 3 })).toBe('stale')
     expect(hostHealth({ ...base, revokedAt: new Date(), staleScan: true })).toBe('revoked')
   })
@@ -25,6 +28,7 @@ describe('hostIssues', () => {
     const h = { ...base, staleHeartbeat: true, staleScan: true, lastOkScanAt: null, rebootRequired: true, autoUpdateEnabled: false }
     expect(hostIssues(h)).toEqual(['no heartbeat > 1h', 'never scanned successfully', 'reboot required', 'auto-update off'])
     expect(hostIssues(base)).toEqual([])
+    expect(hostIssues({ ...base, eol: ['php 7.4'], eolSoon: ['nodejs 20'] })).toEqual(['php 7.4 end of life', 'nodejs 20 EOL soon'])
   })
 })
 
@@ -140,5 +144,17 @@ describe('mcpClientConfigs', () => {
   })
   it('uses the Claude Code CLI form', () => {
     expect(configs[0]!.snippet).toBe('claude mcp add --transport http netra-vuln https://vuln.example.com/mcp --header "Authorization: Bearer tok123"')
+  })
+})
+
+describe('eolLabel', () => {
+  const now = new Date('2026-11-01T00:00:00Z')
+  it('describes each status', () => {
+    expect(eolLabel({ status: 'eol', eol: '2022-11-28', product: 'php', cycle: '7.4' }, now)).toBe('EOL 2022-11-28')
+    expect(eolLabel({ status: 'eol', eol: 'true', product: 'vue', cycle: '2' }, now)).toBe('EOL')
+    expect(eolLabel({ status: 'soon', eol: '2026-12-01', product: 'nodejs', cycle: '20' }, now)).toBe('EOL in 30 days')
+    expect(eolLabel({ status: 'supported', eol: '2027-12-31', product: 'php', cycle: '8.3' }, now)).toBe('until 2027-12-31')
+    expect(eolLabel({ status: 'unknown', eol: '', product: '', cycle: '' }, now)).toBe('not tracked')
+    expect(eolLabel({ status: 'unknown', eol: '', product: 'php', cycle: '' }, now)).toBe('unknown cycle')
   })
 })

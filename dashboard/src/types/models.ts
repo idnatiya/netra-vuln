@@ -76,6 +76,24 @@ export interface Host {
   newInLastScan: number
   resolvedInLastScan: number
   firstScan: boolean
+  /** Software past its end of life / ending within 90 days, e.g. "php 7.4". */
+  eol: string[]
+  eolSoon: string[]
+}
+
+export type EOLStatus = 'eol' | 'soon' | 'supported' | 'unknown'
+
+/** An installed product (OS, runtime, database, framework) with its end-of-life status. */
+export interface Software {
+  name: string
+  version: string
+  path: string
+  product: string
+  cycle: string
+  /** YYYY-MM-DD, "true", "false", or "" */
+  eol: string
+  latest: string
+  status: EOLStatus
 }
 
 export interface Finding {

@@ -4,7 +4,7 @@ CENTRAL_DB ?= dev-out/central.db
 CENTRAL_ADDR ?= $(or $(shell ip=$$(tailscale ip -4 2>/dev/null) && printf '%s\n' "$$ip" | awk 'NR == 1 && /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$$/ { print; exit }'),127.0.0.1):18080
 DEV_ADMIN_USER ?= admin
 # Agent release that the dev /install.sh downloads.
-CENTRAL_AGENT_VERSION ?= v0.2.1
+CENTRAL_AGENT_VERSION ?= v0.3.0
 DEV_ADMIN_PASSWORD_FILE := dev-out/admin-password
 
 .DEFAULT_GOAL := help

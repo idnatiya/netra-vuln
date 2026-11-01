@@ -12,10 +12,24 @@ import (
 type HostController struct {
 	Log     *logrus.Logger
 	UseCase *usecase.HostUseCase
+	EOL     *usecase.EOLUseCase
 }
 
-func NewHostController(useCase *usecase.HostUseCase, logger *logrus.Logger) *HostController {
-	return &HostController{Log: logger, UseCase: useCase}
+func NewHostController(useCase *usecase.HostUseCase, eol *usecase.EOLUseCase, logger *logrus.Logger) *HostController {
+	return &HostController{Log: logger, UseCase: useCase, EOL: eol}
+}
+
+// Software lists the host's installed products with their end-of-life status.
+func (c *HostController) Software(ctx fiber.Ctx) error {
+	id, err := idParam(ctx)
+	if err != nil {
+		return err
+	}
+	response, err := c.EOL.HostSoftware(ctx.Context(), id)
+	if err != nil {
+		return err
+	}
+	return ctx.JSON(model.WebResponse[[]model.SoftwareResponse]{Data: response})
 }
 
 func (c *HostController) List(ctx fiber.Ctx) error {

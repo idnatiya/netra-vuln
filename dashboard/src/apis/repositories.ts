@@ -1,8 +1,8 @@
 import type { Repositories } from '@/apis/ports'
 import type { ComponentFilter, ScanConfig } from '@/types/models'
 import {
-  type AdminSessionDTO, type McpTokenDTO, type ClientDTO, type ComponentDTO, type FindingDTO, type HostDTO, type SessionDTO, type TrendDTO,
-  toAdminSession, toMcpToken, toClient, toComponent, toFinding, toHost, toSession, toTrend,
+  type AdminSessionDTO, type McpTokenDTO, type SoftwareDTO, type ClientDTO, type ComponentDTO, type FindingDTO, type HostDTO, type SessionDTO, type TrendDTO,
+  toAdminSession, toMcpToken, toSoftware, toClient, toComponent, toFinding, toHost, toSession, toTrend,
 } from './dto'
 import type { HttpClient } from './http'
 
@@ -54,6 +54,7 @@ export function createHttpRepositories(http: HttpClient): Repositories {
       delete: (id) => http.request<void>('DELETE', `/hosts/${id}`),
       list: async (client) => (await http.get<HostDTO[]>('/hosts', { client })).map(toHost),
       revoke: (id) => http.request<void>('POST', `/hosts/${id}/revoke`),
+      software: async (id) => (await http.get<SoftwareDTO[]>(`/hosts/${id}/software`)).map(toSoftware),
     },
     clients: {
       delete: (name) => http.request<void>('DELETE', `/clients/${encodeURIComponent(name)}`),

@@ -30,6 +30,20 @@ type HostResponse struct {
 	NewInLastScan      int        `json:"new_in_last_scan"`
 	ResolvedInLastScan int        `json:"resolved_in_last_scan"`
 	FirstScan          bool       `json:"first_scan"`
+	EOL                []string   `json:"eol"`      // software past end of life, e.g. "php 7.4"
+	EOLSoon            []string   `json:"eol_soon"` // ending within 90 days
+}
+
+// SoftwareResponse is one installed product with its end-of-life status.
+type SoftwareResponse struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Path    string `json:"path"`
+	Product string `json:"product"` // endoflife.date product; "" = not tracked
+	Cycle   string `json:"cycle"`   // matched release cycle, "" = unknown
+	EOL     string `json:"eol"`     // YYYY-MM-DD, "true", "false", or ""
+	Latest  string `json:"latest"`  // latest release in the cycle
+	Status  string `json:"status"`  // eol | soon | supported | unknown
 }
 
 type SearchHostRequest struct {

@@ -71,6 +71,7 @@ type Report struct {
 	Status       ScanStatus
 	Error        string
 	Findings     []Vulnerability
+	Software     []Software // HostID unset; for end-of-life checks
 }
 
 type Counts struct{ Total, Critical, High int }
@@ -96,9 +97,10 @@ func (r *Report) Normalize() {
 	r.TrivyVersion = truncate(r.TrivyVersion, maxTrivyVersion)
 	r.Error = truncate(r.Error, maxErrorMessage)
 	if r.Status == StatusError {
-		r.Findings = nil
+		r.Findings, r.Software = nil, nil
 		return
 	}
+	r.normalizeSoftware()
 	seen := make(map[string]bool, len(r.Findings))
 	out := r.Findings[:0]
 	for _, f := range r.Findings {
@@ -160,4 +162,24 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return string([]rune(s)[:n])
+}
+
+// MaxSoftware caps the software rows kept from one report.
+const MaxSoftware = 500
+
+// normalizeSoftware truncates fields, drops rows without a name or version,
+// keeps the first row per (name, path), and caps the list.
+func (r *Report) normalizeSoftware() {
+	seen := map[[2]string]bool{}
+	out := r.Software[:0]
+	for _, s := range r.Software {
+		s.Name, s.Version, s.Path = truncate(s.Name, 64), truncate(s.Version, maxVersion), truncate(s.Path, maxPkgPath)
+		k := [2]string{s.Name, s.Path}
+		if s.Name == "" || s.Version == "" || seen[k] || len(out) == MaxSoftware {
+			continue
+		}
+		seen[k] = true
+		out = append(out, s)
+	}
+	r.Software = out
 }

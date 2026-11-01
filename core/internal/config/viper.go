@@ -36,10 +36,12 @@ func NewViper() *viper.Viper {
 	config.SetDefault("database.path", "central.db")
 	config.SetDefault("backup.at", "02:30")
 	config.SetDefault("backup.keep_days", 14)
+	config.SetDefault("eol.url", "https://endoflife.date/api")
 
 	for key, env := range map[string]string{
 		"database.path":         "CENTRAL_DB",
 		"backup.dir":            "CENTRAL_BACKUP_DIR",
+		"eol.url":               "CENTRAL_EOL_URL",
 		"backup.at":             "CENTRAL_BACKUP_AT",
 		"backup.keep_days":      "CENTRAL_BACKUP_KEEP_DAYS",
 		"web.addr":              "CENTRAL_ADDR",

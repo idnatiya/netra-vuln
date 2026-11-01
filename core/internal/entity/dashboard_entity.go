@@ -31,6 +31,22 @@ type HostSummary struct {
 	NewInLastScan      int  `gorm:"column:new_in_last_scan"`
 	ResolvedInLastScan int  `gorm:"column:resolved_in_last_scan"`
 	FirstScan          bool `gorm:"column:first_scan"`
+	// Software past or near its end of life, e.g. "php 7.4"; set by SetEOL.
+	EOL     []string `gorm:"-"`
+	EOLSoon []string `gorm:"-"`
+}
+
+// SetEOL records the labels of software that is end of life or ends soon.
+func (h *HostSummary) SetEOL(software []SoftwareEOL) {
+	h.EOL, h.EOLSoon = []string{}, []string{}
+	for _, s := range software {
+		switch s.Status {
+		case EOLStatusEOL:
+			h.EOL = append(h.EOL, s.Label())
+		case EOLStatusSoon:
+			h.EOLSoon = append(h.EOLSoon, s.Label())
+		}
+	}
 }
 
 // MarkStale sets the stale flags for an active host.

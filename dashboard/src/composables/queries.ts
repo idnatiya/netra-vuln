@@ -11,6 +11,11 @@ export function useHosts(client: Ref<string | undefined>) {
   return useQuery({ queryKey: ['hosts', client], queryFn: () => uc.listHosts(client.value) })
 }
 
+export function useHostSoftware(id: Ref<number>) {
+  const uc = useUseCases()
+  return useQuery({ queryKey: ['hosts', 'software', id], queryFn: () => uc.hostSoftware(id.value) })
+}
+
 export function useClients() {
   const uc = useUseCases()
   return useQuery({ queryKey: ['clients'], queryFn: () => uc.listClients() })

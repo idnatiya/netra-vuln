@@ -20,6 +20,7 @@ type HostUseCase struct {
 	Log            *logrus.Logger
 	Validate       *validator.Validate
 	HostRepository *repository.HostRepository
+	EOL            *EOLUseCase // annotates hosts with end-of-life software
 }
 
 // Delete permanently removes a revoked host and its scan and finding history.
@@ -40,6 +41,9 @@ func (c *HostUseCase) Delete(ctx context.Context, id int64) error {
 		return fiber.ErrInternalServerError
 	}
 	if err := tx.Where("host_id = ?", id).Delete(&entity.Scan{}).Error; err != nil {
+		return fiber.ErrInternalServerError
+	}
+	if err := tx.Where("host_id = ?", id).Delete(&entity.Software{}).Error; err != nil {
 		return fiber.ErrInternalServerError
 	}
 	if err := tx.Delete(host).Error; err != nil {
@@ -68,6 +72,10 @@ func (c *HostUseCase) Search(ctx context.Context, request *model.SearchHostReque
 	t := now()
 	for i := range hosts {
 		hosts[i].MarkStale(t)
+	}
+	if err := c.EOL.Annotate(c.DB.WithContext(ctx), hosts); err != nil {
+		c.Log.Warnf("Failed evaluate end of life : %+v", err)
+		return nil, fiber.ErrInternalServerError
 	}
 	return converter.Map(hosts, converter.HostToResponse), nil
 }

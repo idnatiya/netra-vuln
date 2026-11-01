@@ -35,6 +35,7 @@ type UseCases struct {
 	Auth      *usecase.AuthUseCase
 	AdminUser *usecase.AdminUserUseCase
 	McpToken  *usecase.McpTokenUseCase
+	EOL       *usecase.EOLUseCase
 }
 
 // Bootstrap wires repositories, use cases, controllers, middleware, and routes.
@@ -48,10 +49,12 @@ func Bootstrap(config *BootstrapConfig) *UseCases {
 	adminUserRepository := repository.NewAdminUserRepository(config.Log)
 	adminSessionRepository := repository.NewAdminSessionRepository(config.Log)
 	mcpTokenRepository := repository.NewMcpTokenRepository(config.Log)
+	softwareRepository := repository.NewSoftwareRepository(config.Log)
+	eolRepository := repository.NewEOLRepository(config.Log)
 
 	// setup use cases
 	uc := &UseCases{
-		Agent:     usecase.NewAgentUseCase(config.DB, config.Log, config.Validate, hostRepository, scanRepository, findingRepository),
+		Agent:     usecase.NewAgentUseCase(config.DB, config.Log, config.Validate, hostRepository, scanRepository, findingRepository, softwareRepository),
 		Enroll:    usecase.NewEnrollUseCase(config.DB, config.Log, config.Validate, clientRepository, enrollTokenRepository, hostRepository),
 		Client:    usecase.NewClientUseCase(config.DB, config.Log, config.Validate, clientRepository, enrollTokenRepository, hostRepository),
 		Host:      usecase.NewHostUseCase(config.DB, config.Log, config.Validate, hostRepository),
@@ -60,7 +63,10 @@ func Bootstrap(config *BootstrapConfig) *UseCases {
 		Auth:      usecase.NewAuthUseCase(config.DB, config.Log, config.Validate, adminUserRepository, adminSessionRepository),
 		AdminUser: usecase.NewAdminUserUseCase(config.DB, config.Log, config.Validate, adminUserRepository),
 		McpToken:  usecase.NewMcpTokenUseCase(config.DB, config.Log, config.Validate, mcpTokenRepository),
+		EOL: usecase.NewEOLUseCase(config.DB, config.Log, config.Config.GetString("eol.url"),
+			eolRepository, softwareRepository, hostRepository),
 	}
+	uc.Host.EOL = uc.EOL
 	if config.App == nil {
 		return uc
 	}
@@ -69,7 +75,7 @@ func Bootstrap(config *BootstrapConfig) *UseCases {
 	agentController := http.NewAgentController(uc.Agent, uc.Enroll, config.Log)
 	authController := http.NewAuthController(uc.Auth, config.Log)
 	clientController := http.NewClientController(uc.Client, config.Log)
-	hostController := http.NewHostController(uc.Host, config.Log)
+	hostController := http.NewHostController(uc.Host, uc.EOL, config.Log)
 	findingController := http.NewFindingController(uc.Finding, config.Log)
 	dashboardController := http.NewDashboardController(uc.Dashboard, config.Log)
 	installController := http.NewInstallController(config.Config.GetString("web.public_url"), config.Config.GetString("agent.version"), config.Log)

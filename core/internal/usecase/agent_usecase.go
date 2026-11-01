@@ -19,18 +19,20 @@ import (
 
 // AgentUseCase serves authenticated agent calls: auth, heartbeat, report ingest, config.
 type AgentUseCase struct {
-	DB                *gorm.DB
-	Log               *logrus.Logger
-	Validate          *validator.Validate
-	HostRepository    *repository.HostRepository
-	ScanRepository    *repository.ScanRepository
-	FindingRepository *repository.FindingRepository
+	DB                 *gorm.DB
+	Log                *logrus.Logger
+	Validate           *validator.Validate
+	HostRepository     *repository.HostRepository
+	ScanRepository     *repository.ScanRepository
+	FindingRepository  *repository.FindingRepository
+	SoftwareRepository *repository.SoftwareRepository
 }
 
 func NewAgentUseCase(db *gorm.DB, log *logrus.Logger, validate *validator.Validate, hostRepository *repository.HostRepository,
-	scanRepository *repository.ScanRepository, findingRepository *repository.FindingRepository) *AgentUseCase {
+	scanRepository *repository.ScanRepository, findingRepository *repository.FindingRepository,
+	softwareRepository *repository.SoftwareRepository) *AgentUseCase {
 	return &AgentUseCase{DB: db, Log: log, Validate: validate, HostRepository: hostRepository,
-		ScanRepository: scanRepository, FindingRepository: findingRepository}
+		ScanRepository: scanRepository, FindingRepository: findingRepository, SoftwareRepository: softwareRepository}
 }
 
 // Verify returns the active host that owns token.
@@ -111,6 +113,13 @@ func (c *AgentUseCase) Report(ctx context.Context, host *entity.Host, request *w
 		if err := c.FindingRepository.ResolveMissing(tx, host.ID, t); err != nil {
 			c.Log.Warnf("Failed resolve missing findings : %+v", err)
 			return nil, fiber.ErrInternalServerError
+		}
+		// Agents before v0.3.0 send no software; keep what an older report stored.
+		if len(report.Software) > 0 {
+			if err := c.SoftwareRepository.Replace(tx, host.ID, report.Software); err != nil {
+				c.Log.Warnf("Failed replace software : %+v", err)
+				return nil, fiber.ErrInternalServerError
+			}
 		}
 	}
 	if err := c.HostRepository.UpdateScan(tx, host.ID, report, t); err != nil {

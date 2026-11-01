@@ -21,6 +21,9 @@ host, and the exact command to fix it.
   Linux kernel, an application folder, or a binary) with a copy-ready command
   (`apt`/`dnf`, kernel purge vs. upgrade + reboot, `composer`/`npm`/`pip`, `dpkg -S`/`rpm -qf`).
 - **Triage**: mark a finding or a whole component *accepted* or *false positive*, with an optional note; verdicts survive re-scans.
+- **End of life**: OS, PHP, Node.js, nginx, Apache, MySQL/MariaDB, Redis, PostgreSQL, and frameworks
+  (Laravel, Symfony, Nuxt, Vue, Next, React, Angular) are checked against [endoflife.date](https://endoflife.date),
+  separate from CVEs; EOL software shows as a host issue and on the host's Software tab.
 - **Multi-tenant**: every host belongs to a client; a client's tokens can never read or write another client's data.
 - **Per-client scan config**: severities, ignore-unfixed, skip dirs, timeout.
 - **MCP server** (`/mcp`) so AI clients (Claude Code, Codex, Cursor, ...) can query findings; triage is opt-in per token.

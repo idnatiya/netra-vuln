@@ -94,6 +94,7 @@ Admin API (`/api/admin/v1/*`) responses use `model.WebResponse{data, paging, err
 - `enroll_tokens` (id, client_id, token_hash, created_at, revoked_at)
 - `hosts` (id, client_id, hostname, host_token_hash, os_family, os_name, os_version, arch, kernel_running, agent_version, trivy_version, reboot_required, auto_update_enabled, last_heartbeat_at, last_scan_at, last_scan_status, created_at, revoked_at; UNIQUE(client_id, hostname))
 - `scans` (id, host_id, scanned_at, status, error_message, duration_seconds, total, critical, high, trivy_version)
+- `host_software` (host_id, name, path, version; PK host_id+name+path), `eol_cycles` (product, cycle, eol, latest, fetched_at; PK product+cycle)
 - `findings` (id, host_id, target, type, cve, pkg, pkg_path, component_kind, component, installed_version, fixed_version, severity, title, first_seen, last_seen, resolved_at NULL, status CHECK IN ('open','accepted','false_positive') default 'open', note; UNIQUE(host_id, finding_key) where finding_key = SHA-256(cve, pkg, installed_version, target[, pkg_path when set]): one short unique key)
 - Times are UTC, stored as text `2006-01-02 15:04:05.999999999-07:00` (`_time_format=sqlite`), so `date()` and string comparison work; SQL-computed times (MIN/MAX/date()) come back as text and are read via `entity.SQLTime`. Hashes are 32-byte BLOBs. Transactions use `BEGIN IMMEDIATE` (`_txlock=immediate`) instead of `SELECT ... FOR UPDATE`; one connection (`SetMaxOpenConns(1)`), so never use `c.DB` inside an open transaction
 - Indexes needed for dashboard queries
@@ -122,6 +123,11 @@ Rules:
 - Admin API JSON shapes live in `core/internal/model` (not part of the agent contract in the agent module's `wire`); the dashboard's `apis/http.ts` unwraps `data` and reads `paging` / `errors`.
 - Dashboard structure: `src/types` contains models, `src/lib` contains pure rules, `src/apis` contains HTTP access and validation, and `src/pages`, `src/components`, and `src/composables` contain the UI. Views never call `fetch`.
 - Production CSP is `default-src 'self'`: no remote fonts/scripts/styles (a vitest guard checks `style.css`).
+
+## End of life
+- Separate from CVEs: agents (v0.3.0+) send `software` with each report (`wire.Software`: runtimes/DBs from local version commands, pm2 from its `package.json`, frameworks from lockfiles). Central replaces `host_software` on each successful report (an empty list from an older agent keeps the previous rows) and adds the host OS (`entity.OSSoftware`).
+- `serve` refreshes `eol_cycles` from endoflife.date (`CENTRAL_EOL_URL`, default `https://endoflife.date/api`) on start and every 24 h; a failed product keeps its last data. Names map to products in `entity.EOLProducts`; the cycle is the longest one that prefixes the version at a dot (`entity.MatchCycle`); status `eol` / `soon` (≤ 90 days) / `supported` / `unknown`.
+- Hosts carry `eol` / `eol_soon` labels (e.g. `php 7.4`), shown as host issues (`hostIssues`); EOL counts as "attention". `GET /api/admin/v1/hosts/:id/software` backs the host page's Software tab.
 
 ## MCP
 - `/mcp` is a read-only MCP server (Streamable HTTP, stateless, JSON responses; official `github.com/modelcontextprotocol/go-sdk`) in `core/internal/delivery/mcp`. Tools `list_clients`, `list_hosts`, `search_findings` (25/page), `host_components` call the same use cases as the admin API and return its models.

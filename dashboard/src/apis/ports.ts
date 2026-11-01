@@ -1,5 +1,5 @@
 import type {
-  AdminSession, Client, McpToken, Component, ComponentFilter, Finding, FindingFilter, Host, Page, ScanConfig, Session, TrendFilter,
+  AdminSession, Client, McpToken, Software, Component, ComponentFilter, Finding, FindingFilter, Host, Page, ScanConfig, Session, TrendFilter,
   TrendPoint, TriageStatus,
 } from '@/types/models'
 
@@ -33,6 +33,7 @@ export interface HostsRepository {
   list(client?: string): Promise<Host[]>
   revoke(id: number): Promise<void>
   delete(id: number): Promise<void>
+  software(id: number): Promise<Software[]>
 }
 
 export interface ClientsRepository {

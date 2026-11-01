@@ -35,6 +35,7 @@ environment (or config.json in ./ or ./core):
   CENTRAL_DB           SQLite database file (default central.db; the image uses /data/central.db)
   CENTRAL_BACKUP_DIR   serve: daily backup into this dir (empty = off), kept CENTRAL_BACKUP_KEEP_DAYS (14)
   CENTRAL_BACKUP_AT    serve: backup time, UTC HH:MM (default 02:30)
+  CENTRAL_EOL_URL      serve: end-of-life data source (default https://endoflife.date/api), refreshed daily
   CENTRAL_ADDR         listen address for serve (default :8080)
   CENTRAL_TRUST_PROXY  "true" behind a reverse proxy: client IP from X-Forwarded-For (private-network proxies)
   CENTRAL_LOG_LEVEL    logrus level 0-6 (default 4 = info)
@@ -113,8 +114,9 @@ func run(args []string, viperConfig *viper.Viper, log *logrus.Logger) error {
 	if args[0] == "serve" {
 		app := config.NewFiber(viperConfig, log)
 		viperConfig.Set("app.version", version)
-		config.Bootstrap(&config.BootstrapConfig{DB: db, App: app, Log: log, Validate: validate, Config: viperConfig})
+		uc := config.Bootstrap(&config.BootstrapConfig{DB: db, App: app, Log: log, Validate: validate, Config: viperConfig})
 		go config.RunBackups(ctx, db, viperConfig, log)
+		go uc.EOL.RunRefresh(ctx, 24*time.Hour)
 		return serve(ctx, app, viperConfig.GetString("web.addr"), log)
 	}
 

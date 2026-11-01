@@ -1,5 +1,5 @@
 import type {
-  AdminSession, Client, McpToken, Component, ComponentKind, Finding, Host, ScanConfig, Session, Severity, TrendPoint, TriageStatus,
+  AdminSession, Client, McpToken, Software, Component, ComponentKind, Finding, Host, ScanConfig, Session, Severity, TrendPoint, TriageStatus,
 } from '@/types/models'
 
 // Shapes returned by central's admin API (snake_case) and their mapping to domain types.
@@ -26,7 +26,7 @@ export interface HostDTO {
   last_scan_status: 'ok' | 'error' | '', last_ok_scan_at: string | null, created_at: string,
   revoked_at: string | null, open_critical: number, open_high: number, accepted: number,
   false_positive: number, stale_scan: boolean, stale_heartbeat: boolean, new_in_last_scan: number,
-  resolved_in_last_scan: number, first_scan: boolean
+  resolved_in_last_scan: number, first_scan: boolean, eol: string[] | null, eol_soon: string[] | null
 }
 export const toHost = (d: HostDTO): Host => ({
   id: d.id, client: d.client, hostname: d.hostname, osFamily: d.os_family, osName: d.os_name,
@@ -37,6 +37,7 @@ export const toHost = (d: HostDTO): Host => ({
   revokedAt: maybeDate(d.revoked_at), openCritical: d.open_critical, openHigh: d.open_high,
   accepted: d.accepted, falsePositive: d.false_positive, staleScan: d.stale_scan, staleHeartbeat: d.stale_heartbeat,
   newInLastScan: d.new_in_last_scan, resolvedInLastScan: d.resolved_in_last_scan, firstScan: d.first_scan,
+  eol: d.eol ?? [], eolSoon: d.eol_soon ?? [],
 })
 
 export interface FindingDTO {
@@ -78,3 +79,6 @@ export interface McpTokenDTO { id: number, name: string, can_triage: boolean, cr
 export const toMcpToken = (d: McpTokenDTO): McpToken => ({
   id: d.id, name: d.name, canTriage: d.can_triage, createdAt: date(d.created_at), lastUsedAt: d.last_used_at ? date(d.last_used_at) : undefined,
 })
+
+export type SoftwareDTO = Software
+export const toSoftware = (d: SoftwareDTO): Software => ({ ...d })

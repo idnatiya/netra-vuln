@@ -147,6 +147,7 @@ func (c *RouteConfig) SetupAdminAuthRoute() {
 	admin.Get("/install", c.InstallController.Get)
 
 	admin.Get("/hosts", c.HostController.List)
+	admin.Get("/hosts/:id/software", c.HostController.Software)
 	admin.Post("/hosts/:id/revoke", c.HostController.Revoke)
 	admin.Delete("/hosts/:id", c.HostController.Delete)
 

@@ -6,7 +6,7 @@ require (
 	github.com/glebarez/sqlite v1.11.0
 	github.com/go-playground/validator/v10 v10.28.0
 	github.com/gofiber/fiber/v3 v3.5.0
-	github.com/idnatiya/netra-vuln-agent v0.1.0
+	github.com/idnatiya/netra-vuln-agent v0.3.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/viper v1.21.0

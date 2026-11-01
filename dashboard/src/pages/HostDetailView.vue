@@ -10,6 +10,7 @@ import ComponentItem from '@/components/ComponentItem.vue'
 import ComponentTriageDialog from '@/components/ComponentTriageDialog.vue'
 import CopyCommand from '@/components/CopyCommand.vue'
 import FindingRow from '@/components/FindingRow.vue'
+import SoftwareTable from '@/components/SoftwareTable.vue'
 import TriageDialog from '@/components/TriageDialog.vue'
 import UnderlineTabs from '@/components/UnderlineTabs.vue'
 import {
@@ -18,7 +19,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { useBreadcrumbs } from '@/composables/breadcrumbs'
-import { useComponents, useDeleteHost, useFindings, useHosts, useRevokeHost } from '@/composables/queries'
+import { useComponents, useDeleteHost, useFindings, useHostSoftware, useHosts, useRevokeHost } from '@/composables/queries'
 import { errorMessage, formatDateTime, formatNumber, plural, relative } from '@/lib/format'
 
 const route = useRoute()
@@ -33,7 +34,7 @@ useBreadcrumbs(() => [
   { label: host.value?.hostname ?? 'Host' },
 ])
 
-type Tab = 'fix' | 'findings'
+type Tab = 'fix' | 'findings' | 'software'
 const tab = ref<Tab>('fix')
 
 const status = ref<TriageStatus>('open')
@@ -48,7 +49,9 @@ watch(id, () => (findingsPage.value = 1))
 const tabs = computed(() => [
   { value: 'fix' as const, label: 'What to fix' },
   { value: 'findings' as const, label: 'Findings', count: host.value ? host.value.openCritical + host.value.openHigh : undefined },
+  { value: 'software' as const, label: 'Software', count: host.value?.eol.length || undefined },
 ])
+const software = useHostSoftware(id)
 
 const triaging = ref<{ component: Component, title: string } | null>(null)
 const triagingFinding = ref<Finding | null>(null)
@@ -153,6 +156,12 @@ const findingGrid = 'grid grid-cols-[minmax(0,1fr)_4.5rem] items-center gap-x-4 
           @triage="(comp, title) => (triaging = { component: comp, title })"
           @triage-finding="(f) => (triagingFinding = f)"
         />
+      </div>
+
+      <div v-else-if="tab === 'software'" class="self-start">
+        <p v-if="software.isError.value" class="text-destructive">{{ software.error.value?.message }}</p>
+        <SoftwareTable v-else-if="software.data.value" :software="software.data.value" />
+        <p v-else class="text-muted-foreground">Loading…</p>
       </div>
 
       <div v-else class="self-start">

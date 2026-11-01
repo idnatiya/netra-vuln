@@ -28,7 +28,7 @@ const (
 // per-host rate limiter keys never repeat across tests.
 func ClearAll(t *testing.T) {
 	t.Helper()
-	for _, table := range []string{"mcp_tokens", "admin_sessions", "admin_users", "findings", "scans", "hosts", "enroll_tokens", "clients"} {
+	for _, table := range []string{"host_software", "eol_cycles", "mcp_tokens", "admin_sessions", "admin_users", "findings", "scans", "hosts", "enroll_tokens", "clients"} {
 		require.NoError(t, db.Exec("DELETE FROM "+table).Error)
 	}
 	clear(enrollTokens)

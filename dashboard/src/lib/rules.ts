@@ -1,4 +1,4 @@
-import type { Component, Host, Page, TrendPoint } from '@/types/models'
+import type { Software, Component, Host, Page, TrendPoint } from '@/types/models'
 
 // Pure business rules shared by views. Thresholds mirror central's domain package.
 
@@ -7,7 +7,7 @@ export type HostHealth = 'revoked' | 'stale' | 'attention' | 'healthy'
 export function hostHealth(h: Host): HostHealth {
   if (h.revokedAt) return 'revoked'
   if (h.staleScan || h.staleHeartbeat) return 'stale'
-  if (h.rebootRequired || !h.autoUpdateEnabled || h.openCritical > 0) return 'attention'
+  if (h.rebootRequired || !h.autoUpdateEnabled || h.openCritical > 0 || h.eol.length > 0) return 'attention'
   return 'healthy'
 }
 
@@ -20,6 +20,8 @@ export function hostIssues(h: Host): string[] {
   if (h.lastScanStatus === 'error') out.push('last scan failed')
   if (h.rebootRequired) out.push('reboot required')
   if (!h.autoUpdateEnabled) out.push('auto-update off')
+  for (const s of h.eol) out.push(`${s} end of life`)
+  for (const s of h.eolSoon) out.push(`${s} EOL soon`)
   return out
 }
 
@@ -198,4 +200,15 @@ export function mcpClientConfigs(url: string, token: string, name = 'netra-vuln'
     { id: 'other', label: 'Other', where: 'Any MCP client with Streamable HTTP',
       snippet: `URL:    ${url}\nHeader: Authorization: ${auth}` },
   ]
+}
+
+/** Short end-of-life text for a software row, e.g. "EOL 2022-11-28", "EOL in 30 days", "until 2027-12-31". */
+export function eolLabel(s: Pick<Software, 'status' | 'eol' | 'product' | 'cycle'>, now = new Date()): string {
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(s.eol) ? s.eol : ''
+  switch (s.status) {
+    case 'eol': return date ? `EOL ${date}` : 'EOL'
+    case 'soon': return `EOL in ${Math.max(0, Math.ceil((new Date(`${date}T00:00:00Z`).getTime() - now.getTime()) / 86_400_000))} days`
+    case 'supported': return date ? `until ${date}` : 'supported'
+    default: return s.product && !s.cycle ? 'unknown cycle' : 'not tracked'
+  }
 }

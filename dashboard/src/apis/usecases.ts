@@ -51,6 +51,7 @@ export function createUseCases(r: Repositories) {
     listHosts: (client?: string) => r.hosts.list(client),
     revokeHost: (id: number) => r.hosts.revoke(id),
     deleteHost: (id: number) => r.hosts.delete(id),
+    hostSoftware: (id: number) => r.hosts.software(id),
 
     trend: (filter: TrendFilter) => r.trend.trend(filter),
 

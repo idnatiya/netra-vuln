@@ -49,6 +49,10 @@ func WireToReport(in *wire.Report) entity.Report {
 			Title:            f.Title,
 		}
 	}
+	software := make([]entity.Software, len(in.Software))
+	for i, s := range in.Software {
+		software[i] = entity.Software{Name: s.Name, Version: s.Version, Path: s.Path}
+	}
 	return entity.Report{
 		ClientName:   in.ClientID,
 		Hostname:     in.Hostname,
@@ -59,6 +63,7 @@ func WireToReport(in *wire.Report) entity.Report {
 		Status:       entity.ScanStatus(in.Status),
 		Error:        in.Error,
 		Findings:     findings,
+		Software:     software,
 	}
 }
 
@@ -95,7 +100,13 @@ func HostToResponse(h entity.HostSummary) model.HostResponse {
 		OpenCritical: h.OpenCritical, OpenHigh: h.OpenHigh, Accepted: h.Accepted, FalsePositive: h.FalsePositive,
 		StaleScan: h.StaleScan, StaleHeartbeat: h.StaleHeartbeat,
 		NewInLastScan: h.NewInLastScan, ResolvedInLastScan: h.ResolvedInLastScan, FirstScan: h.FirstScan,
+		EOL: h.EOL, EOLSoon: h.EOLSoon,
 	}
+}
+
+func SoftwareToResponse(s entity.SoftwareEOL) model.SoftwareResponse {
+	return model.SoftwareResponse{Name: s.Name, Version: s.Version, Path: s.Path, Product: s.Product,
+		Cycle: s.Cycle.Cycle, EOL: s.Cycle.EOL, Latest: s.Cycle.Latest, Status: string(s.Status)}
 }
 
 func FindingToResponse(f entity.FindingSummary) model.FindingResponse {
