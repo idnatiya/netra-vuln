@@ -1,0 +1,123 @@
+# netra-vuln
+
+Central vulnerability monitoring for a fleet of Linux VMs across several clients.
+A small agent ([netra-vuln-agent](https://github.com/idnatiya/netra-vuln-agent)) runs
+[Trivy](https://trivy.dev) on each VM and pushes the slimmed-down results here; central
+stores them in MySQL and shows them in an admin dashboard: what is vulnerable, on which
+host, and the exact command to fix it.
+
+![Hosts, worst first](docs/screenshots/hosts.png)
+
+| What to fix, per host | Search CVEs across hosts |
+| --- | --- |
+| ![Host detail](docs/screenshots/host-detail.png) | ![Search CVEs](docs/screenshots/search-cves.png) |
+| **Clients** | **Add agent (one-line installer)** |
+| ![Clients](docs/screenshots/clients.png) | ![Add agent](docs/screenshots/add-agent.png) |
+
+## Features
+
+- **Hosts** sorted worst first, with 14-day trends, stale/not-reporting detection, reboot and auto-update hints.
+- **What to fix**: findings grouped into one upgrade action each (an OS source package, the
+  Linux kernel, an application folder, or a binary) with a copy-ready command
+  (`apt`/`dnf`, kernel purge vs. upgrade + reboot, `composer`/`npm`/`pip`, `dpkg -S`/`rpm -qf`).
+- **Triage**: mark a finding or a whole component *accepted* or *false positive*, with an optional note; verdicts survive re-scans.
+- **Multi-tenant**: every host belongs to a client; a client's tokens can never read or write another client's data.
+- **Per-client scan config**: severities, ignore-unfixed, skip dirs, timeout.
+- **MCP server** (`/mcp`) so AI clients (Claude Code, Codex, Cursor, ...) can query findings; triage is opt-in per token.
+
+## Architecture
+
+```
+  VM (per client)                              central (Docker Compose)
+ ┌──────────────────┐   HTTPS push only    ┌───────┐    ┌──────────────┐    ┌───────┐
+ │ vuln-agent       │ ───────────────────▶ │ Caddy │ ─▶ │ central API  │ ─▶ │ MySQL │
+ │  + Trivy (daily) │  enroll / heartbeat  │  TLS  │    │ (Go, Fiber)  │    └───────┘
+ └──────────────────┘  config / report     │       │    └──────────────┘        │
+                                           │       │ ─▶ dashboard SPA (Vue)     ▼
+  admin browser ─────────────────────────▶ │       │                       daily backup
+  AI client (MCP) ───────────────────────▶ └───────┘
+```
+
+- **Passive agent**: it only sends data and reads declarative config. Central cannot run commands on a VM.
+- **Push only**: VMs connect to central; central never connects to a VM. VMs never touch MySQL.
+- **Tokens hashed** (SHA-256): single-use enroll tokens bound to a client, one revocable token per host.
+- Plain HTTP between agent and central is allowed only over an encrypted network such as Tailscale.
+
+## Deploy central
+
+Requirements: a Linux server with Docker Compose and a DNS name pointing at it (ports 80/443 open for Let's Encrypt).
+
+```sh
+cd deploy/central
+cp .env.example .env        # set CENTRAL_DOMAIN, ACME_EMAIL, MySQL passwords (openssl rand -base64 32)
+docker compose up -d --build
+docker compose exec central central admin create <name>   # first admin (prompts for a password)
+```
+
+Open `https://<CENTRAL_DOMAIN>` and sign in. Useful `.env` settings:
+
+| Variable | Purpose |
+| --- | --- |
+| `ADMIN_ALLOW_CIDRS` | Networks allowed to reach the dashboard, admin API and `/mcp` (agents are never restricted) |
+| `CENTRAL_AGENT_VERSION` | Agent release served by the one-line installer (`/install.sh`); empty disables it |
+| `CENTRAL_PUBLIC_URL` | URL VMs use to reach central, if not `https://CENTRAL_DOMAIN` (e.g. a Tailscale IP) |
+| `BACKUP_AT`, `BACKUP_KEEP_DAYS` | Daily `mysqldump` into `./backups` |
+
+Migrations run automatically on start (`migrate` service). More admins: `docker compose exec central central admin create|passwd|list`.
+
+## Enroll a VM
+
+1. **Clients** → create a client (e.g. `acme`).
+2. **Add agent** → pick the client → **Generate enroll token** → run the command on the VM as root.
+   The token enrolls exactly one agent. Supported: Ubuntu, Debian, AlmaLinux, Rocky, CentOS (amd64, arm64).
+3. Optional: `sudo vuln-agent check` on the VM.
+
+The agent scans daily and sends a heartbeat every 15 minutes. After fixing something, re-scan with
+`sudo vuln-agent scan`. Manual install, Ansible role and agent configuration are documented in the
+[agent repo](https://github.com/idnatiya/netra-vuln-agent).
+
+## Revoke or delete a host
+
+- Dashboard: host page → **Revoke**. The host token stops working immediately; history is kept.
+- CLI: `docker compose exec central central host revoke <hostname> -client <name>`.
+- A revoked host can be **deleted** from its page (permanently removes its scans and findings).
+  The agent stays installed on the VM; uninstall it there.
+- To bring a revoked host back, issue a new enroll token and enroll again: it reuses the same host row.
+
+## MCP for AI clients
+
+**MCP** page → create a token (shown once) → copy the setup for your client (Claude Code, Codex,
+OpenCode, Antigravity, Cursor, Claude Desktop). Tools: `list_clients`, `list_hosts`, `search_findings`,
+`host_components`; tokens created with **Allow triage** also get `triage_finding` and `triage_component`
+(notes are tagged `[via MCP: <token name>]`). Central makes no LLM calls itself.
+
+## Local development
+
+```sh
+make dev     # MySQL (127.0.0.1:3317, tmpfs) + central (:18080) + dashboard (http://localhost:11270)
+make test    # dashboard tests + go vet + Go tests against MySQL
+make help    # all targets
+```
+
+`make dev` seeds admin `admin` (password in `dev-out/admin-password`). Admin CLI on the dev DB:
+`make central ARGS="client list"`. Layout: `core/` (Go API, migrations, black-box tests in `core/test`),
+`dashboard/` (Vue 3 + shadcn-vue), `deploy/` (Compose, Caddy, dev MySQL).
+
+## Security and data retention
+
+- Central stores, per host: OS/kernel/agent metadata, heartbeats, scan summaries and findings
+  (CVE, package, versions, file path of the lockfile or binary). No file contents, secrets or configs.
+- Findings are never deleted by scans: fixed ones get `resolved_at`, triage is kept. Data is removed
+  only by deleting a revoked host. Backups follow `BACKUP_KEEP_DAYS`.
+- Admin sessions: HttpOnly/Secure/SameSite=Strict cookie, 12 h, CSRF check on same origin, login rate limit.
+- What the agent reads and sends is documented in the agent repo.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| Report rejected as too large (413 / connection reset) | The body limit is 20 MB decompressed. Narrow `app_dirs` on the VM or add skip dirs in the client's scan config. |
+| Enroll returns 409 | The hostname is already active for that client. Revoke it first, then enroll with a new token. |
+| Enroll returns 401 | Unknown client, or the enroll token was already used, belongs to another client, or is wrong. Generate a new one. |
+| Host shows "not reporting" | No heartbeat for over an hour: check `systemctl status vuln-agent-*` and network access to central. |
+| Dashboard 403 | Your IP is outside `ADMIN_ALLOW_CIDRS`. |
