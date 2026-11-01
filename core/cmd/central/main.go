@@ -32,7 +32,9 @@ var version = "dev" // -ldflags "-X main.version=..."
 const usage = `usage: central <command>
 
 environment (or config.json in ./ or ./core):
-  CENTRAL_DSN          MySQL DSN, e.g. user:pass@tcp(mysql:3306)/vuln   (required)
+  CENTRAL_DB           SQLite database file (default central.db; the image uses /data/central.db)
+  CENTRAL_BACKUP_DIR   serve: daily backup into this dir (empty = off), kept CENTRAL_BACKUP_KEEP_DAYS (14)
+  CENTRAL_BACKUP_AT    serve: backup time, UTC HH:MM (default 02:30)
   CENTRAL_ADDR         listen address for serve (default :8080)
   CENTRAL_TRUST_PROXY  "true" behind a reverse proxy: client IP from X-Forwarded-For (private-network proxies)
   CENTRAL_LOG_LEVEL    logrus level 0-6 (default 4 = info)
@@ -43,7 +45,8 @@ environment (or config.json in ./ or ./core):
 
 commands:
   serve                                    run the API server
-  migrate                                  apply database migrations
+  migrate                                  apply database migrations (serve and the CLI also do this)
+  backup <file>                            write a consistent copy of the database (safe while serving)
   client enroll-token <name>               issue one single-use enroll token
   client create <name>                     create a client
   client set-config <name> <file.json|->   set scan overrides (wire.ScanConfig JSON)
@@ -87,19 +90,31 @@ func run(args []string, viperConfig *viper.Viper, log *logrus.Logger) error {
 		return nil
 	case "healthcheck": // no database needed; used by the Docker healthcheck
 		return healthcheck(viperConfig.GetString("web.addr"))
-	case "migrate":
-		return config.Migrate(viperConfig, log)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	db := config.NewDatabase(viperConfig, log)
+	switch args[0] {
+	case "migrate":
+		return config.Migrate(db, log)
+	case "backup":
+		if len(args) != 2 {
+			return errUsage
+		}
+		return config.Backup(db, args[1])
+	}
+	// Every other command needs the current schema; migrating is idempotent.
+	if err := config.Migrate(db, log); err != nil {
+		return err
+	}
 	validate := config.NewValidator(viperConfig)
 
 	if args[0] == "serve" {
 		app := config.NewFiber(viperConfig, log)
 		viperConfig.Set("app.version", version)
 		config.Bootstrap(&config.BootstrapConfig{DB: db, App: app, Log: log, Validate: validate, Config: viperConfig})
+		go config.RunBackups(ctx, db, viperConfig, log)
 		return serve(ctx, app, viperConfig.GetString("web.addr"), log)
 	}
 

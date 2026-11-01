@@ -1,52 +1,57 @@
 package config
 
 import (
-	"database/sql"
-	"errors"
 	"fmt"
+	"io/fs"
+	"slices"
+	"strings"
 
-	"github.com/golang-migrate/migrate/v4"
-	migratemysql "github.com/golang-migrate/migrate/v4/database/mysql"
-	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
+	"gorm.io/gorm"
 
 	"netra-vuln/core/db/migrations"
 )
 
-// Migrate applies the embedded golang-migrate migrations (db/migrations) up to
-// the latest version. golang-migrate takes a MySQL advisory lock, so concurrent
-// runs do not race.
-func Migrate(viper *viper.Viper, log *logrus.Logger) error {
-	dsn, err := DSN(viper, true) // migration files hold several statements
+// Migrate applies the embedded <version>_<name>.up.sql files that are not yet
+// recorded in schema_migrations, in order, each in its own transaction.
+// ponytail: up only; add down migrations when a rollback is ever needed.
+func Migrate(db *gorm.DB, log *logrus.Logger) error {
+	if err := db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY)`).Error; err != nil {
+		return err
+	}
+	var done []string
+	if err := db.Raw(`SELECT version FROM schema_migrations`).Scan(&done).Error; err != nil {
+		return err
+	}
+	files, err := fs.Glob(migrations.FS, "*.up.sql")
 	if err != nil {
 		return err
 	}
-	db, err := sql.Open("mysql", dsn)
-	if err != nil {
-		return err
+	slices.Sort(files)
+	last, applied := "", 0
+	for _, f := range files {
+		version, _, _ := strings.Cut(f, "_")
+		last = version
+		if slices.Contains(done, version) {
+			continue
+		}
+		sql, err := fs.ReadFile(migrations.FS, f)
+		if err != nil {
+			return err
+		}
+		err = db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Exec(string(sql)).Error; err != nil {
+				return err
+			}
+			return tx.Exec(`INSERT INTO schema_migrations (version) VALUES (?)`, version).Error
+		})
+		if err != nil {
+			return fmt.Errorf("migration %s: %w", f, err)
+		}
+		applied++
 	}
-	defer db.Close()
-
-	source, err := iofs.New(migrations.FS, ".")
-	if err != nil {
-		return err
+	if applied > 0 {
+		log.WithFields(logrus.Fields{"version": last, "applied": applied}).Info("Migrations applied")
 	}
-	driver, err := migratemysql.WithInstance(db, &migratemysql.Config{})
-	if err != nil {
-		return fmt.Errorf("migrate: %w", err)
-	}
-	m, err := migrate.NewWithInstance("iofs", source, "mysql", driver)
-	if err != nil {
-		return fmt.Errorf("migrate: %w", err)
-	}
-	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		return fmt.Errorf("migrate up: %w", err)
-	}
-	version, dirty, err := m.Version()
-	if err != nil && !errors.Is(err, migrate.ErrNilVersion) {
-		return err
-	}
-	log.WithFields(logrus.Fields{"version": version, "dirty": dirty}).Info("Migrations applied")
 	return nil
 }

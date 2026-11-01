@@ -3,7 +3,7 @@
 Central vulnerability monitoring for a fleet of Linux VMs across several clients.
 A small agent ([netra-vuln-agent](https://github.com/idnatiya/netra-vuln-agent)) runs
 [Trivy](https://trivy.dev) on each VM and pushes the slimmed-down results here; central
-stores them in MySQL and shows them in an admin dashboard: what is vulnerable, on which
+stores them in SQLite and shows them in an admin dashboard: what is vulnerable, on which
 host, and the exact command to fix it.
 
 ![Hosts, worst first](docs/screenshots/hosts.png)
@@ -30,7 +30,7 @@ host, and the exact command to fix it.
 ```
   VM (per client)                          your HTTPS             central (Docker Compose)
  ┌──────────────────┐  HTTPS push only   ┌──────────────┐    ┌─────────────────────┐    ┌───────┐
- │ vuln-agent       │ ─────────────────▶ │ reverse      │ ─▶ │ central (Go, Fiber) │ ─▶ │ MySQL │
+ │ vuln-agent       │ ─────────────────▶ │ reverse      │ ─▶ │ central (Go, Fiber) │ ─▶ │SQLite │
  │  + Trivy (daily) │ enroll / heartbeat │ proxy        │    │  API + dashboard    │    └───────┘
  └──────────────────┘  config / report   │ (nginx,      │    │  SPA (Vue)          │        │
   admin browser ───────────────────────▶ │  Traefik,    │    └─────────────────────┘        ▼
@@ -39,7 +39,7 @@ host, and the exact command to fix it.
 ```
 
 - **Passive agent**: it only sends data and reads declarative config. Central cannot run commands on a VM.
-- **Push only**: VMs connect to central; central never connects to a VM. VMs never touch MySQL.
+- **Push only**: VMs connect to central; central never connects to a VM. VMs never touch the database.
 - **Tokens hashed** (SHA-256): single-use enroll tokens bound to a client, one revocable token per host.
 - Plain HTTP between agent and central is allowed only over an encrypted network such as Tailscale.
 
@@ -49,7 +49,7 @@ Requirements: a Linux server with Docker Compose, and an HTTPS reverse proxy you
 (nginx, Traefik, Cloudflare Tunnel, `tailscale serve`, ...). The dashboard needs HTTPS: the session cookie is `Secure`.
 
 ```sh
-cp .env.example .env        # set CENTRAL_PUBLIC_URL and the MySQL passwords (openssl rand -base64 32)
+cp .env.example .env        # set CENTRAL_PUBLIC_URL
 docker compose up -d --build
 docker compose exec central central admin create <name>   # first admin (prompts for a password)
 ```
@@ -74,11 +74,11 @@ Open `CENTRAL_PUBLIC_URL` and sign in. Useful `.env` settings:
 | `CENTRAL_PORT` | Host address central listens on; keep it on 127.0.0.1 or a private interface |
 | `ADMIN_ALLOW_CIDRS` | Networks allowed to reach the dashboard, admin API and `/mcp` (agents are never restricted) |
 | `CENTRAL_AGENT_VERSION` | Agent release served by the one-line installer (`/install.sh`); empty disables it |
-| `BACKUP_AT`, `BACKUP_KEEP_DAYS` | Daily `mysqldump` into `./backups` |
+| `BACKUP_AT`, `BACKUP_KEEP_DAYS` | Daily database copy into the volume's `/data/backups` (copy out: `docker compose cp central:/data/backups ./backups`) |
 
 The proxy must send `Host` unchanged (the admin API checks a same-origin `Origin`) and `X-Forwarded-For`
 (client IPs for the login limit and `ADMIN_ALLOW_CIDRS`; trusted only from private/loopback addresses).
-Migrations run automatically on start (`migrate` service). More admins: `docker compose exec central central admin create|passwd|list`.
+Migrations run automatically when central starts. Manual backup: `docker compose exec central central backup /data/backups/now.db`. More admins: `docker compose exec central central admin create|passwd|list`.
 
 ## Enroll a VM
 
@@ -109,14 +109,14 @@ OpenCode, Antigravity, Cursor, Claude Desktop). Tools: `list_clients`, `list_hos
 ## Local development
 
 ```sh
-make dev     # MySQL (127.0.0.1:3317, tmpfs) + central (:18080) + dashboard (http://localhost:11270)
-make test    # dashboard tests + go vet + Go tests against MySQL
+make dev     # central (:18080, SQLite in dev-out/) + dashboard (http://localhost:11270)
+make test    # dashboard tests + go vet + Go tests (temp SQLite, no Docker)
 make help    # all targets
 ```
 
 `make dev` seeds admin `admin` (password in `dev-out/admin-password`). Admin CLI on the dev DB:
 `make central ARGS="client list"`. Layout: `core/` (Go API, migrations, black-box tests in `core/test`),
-`dashboard/` (Vue 3 + shadcn-vue), `Dockerfile` / `docker-compose.yml` (production), `compose.dev.yml` (dev MySQL).
+`dashboard/` (Vue 3 + shadcn-vue), `Dockerfile` / `docker-compose.yml` (production: one container, SQLite on a volume).
 
 ## Security and data retention
 

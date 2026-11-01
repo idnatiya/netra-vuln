@@ -104,8 +104,8 @@ func TestMarkStale(t *testing.T) {
 		h                entity.HostSummary
 		scan, heartbeats bool
 	}{
-		{"fresh", entity.HostSummary{LastOKScanAt: ago(time.Hour), Host: entity.Host{LastHeartbeatAt: ago(time.Minute)}}, false, false},
-		{"old scan", entity.HostSummary{LastOKScanAt: ago(49 * time.Hour), Host: entity.Host{LastHeartbeatAt: ago(time.Minute)}}, true, false},
+		{"fresh", entity.HostSummary{LastOKScanAt: entity.SQLTime{Time: *ago(time.Hour)}, Host: entity.Host{LastHeartbeatAt: ago(time.Minute)}}, false, false},
+		{"old scan", entity.HostSummary{LastOKScanAt: entity.SQLTime{Time: *ago(49 * time.Hour)}, Host: entity.Host{LastHeartbeatAt: ago(time.Minute)}}, true, false},
 		{"never scanned, old heartbeat", entity.HostSummary{Host: entity.Host{LastHeartbeatAt: ago(2 * time.Hour)}}, true, true},
 		{"revoked is never stale", entity.HostSummary{Host: entity.Host{RevokedAt: ago(time.Hour)}}, false, false},
 	}

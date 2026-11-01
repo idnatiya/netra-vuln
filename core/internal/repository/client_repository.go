@@ -5,7 +5,6 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 
 	"netra-vuln/core/internal/entity"
 )
@@ -24,7 +23,7 @@ func (r *ClientRepository) FindByName(db *gorm.DB, client *entity.Client, name s
 }
 
 func (r *ClientRepository) FindByNameForUpdate(db *gorm.DB, client *entity.Client, name string) error {
-	return db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("name = ?", name).Take(client).Error
+	return db.Where("name = ?", name).Take(client).Error // write-locked by BEGIN IMMEDIATE
 }
 
 func (r *ClientRepository) FindAll(db *gorm.DB) ([]entity.Client, error) {

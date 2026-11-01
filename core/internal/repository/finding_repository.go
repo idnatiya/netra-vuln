@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -12,7 +14,7 @@ import (
 	"netra-vuln/core/internal/model"
 )
 
-// upsertBatch keeps one INSERT well below MySQL's 65535 placeholder limit.
+// upsertBatch keeps one INSERT well below SQLite's 32766 bound-parameter limit.
 const upsertBatch = 500
 
 // maxComponentPackages caps the package names listed per component row.
@@ -72,7 +74,7 @@ func (r *FindingRepository) UpdateComponentTriage(db *gorm.DB, hostID int64, kin
 	return res.RowsAffected, res.Error
 }
 
-// likeEscaper escapes LIKE wildcards; MySQL's default escape character is '\'.
+// likeEscaper escapes LIKE wildcards; queries declare ESCAPE '\'.
 var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 
 // filter applies the joins and conditions shared by Search and Components.
@@ -98,7 +100,7 @@ func (r *FindingRepository) filter(db *gorm.DB, req *model.SearchFindingRequest)
 	}
 	if req.Query != "" {
 		like := "%" + likeEscaper.Replace(req.Query) + "%"
-		q = q.Where("(f.cve LIKE ? OR f.pkg LIKE ?)", like, like)
+		q = q.Where(`(f.cve LIKE ? ESCAPE '\' OR f.pkg LIKE ? ESCAPE '\')`, like, like)
 	}
 	if req.ComponentKind != "" {
 		q = q.Where("f.component_kind = ? AND f.component = ?", req.ComponentKind, req.Component)
@@ -113,7 +115,7 @@ func (r *FindingRepository) Search(db *gorm.DB, req *model.SearchFindingRequest)
 		return nil, 0, err
 	}
 	order := map[string]string{
-		model.SortSeverity:  `FIELD(f.severity, 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN'), f.first_seen, f.id`,
+		model.SortSeverity:  severityRank("f.severity") + `, f.first_seen, f.id`,
 		model.SortFirstSeen: `f.first_seen, f.id`,
 		model.SortLastSeen:  `f.last_seen DESC, f.id DESC`,
 	}[req.Sort]
@@ -127,29 +129,47 @@ func (r *FindingRepository) Search(db *gorm.DB, req *model.SearchFindingRequest)
 // ponytail: capped at 1000 rows without paging; add paging if a fleet ever exceeds it.
 func (r *FindingRepository) Components(db *gorm.DB, req *model.SearchFindingRequest) ([]entity.ComponentSummary, error) {
 	out := []entity.ComponentSummary{}
-	err := r.filter(db, req).Select(`f.host_id AS host_id, c.name AS client_name, h.hostname AS hostname,
-		f.component_kind AS component_kind, f.component AS component,
-		SUBSTRING_INDEX(GROUP_CONCAT(DISTINCT f.pkg ORDER BY f.pkg SEPARATOR '\n'), '\n', ?) AS packages,
-		GROUP_CONCAT(DISTINCT f.type ORDER BY f.type SEPARATOR '\n') AS types, COUNT(DISTINCT f.pkg) AS pkg_count,
-		COUNT(*) AS findings, COUNT(DISTINCT f.cve) AS cves,
-		SUM(f.severity = 'CRITICAL') AS critical, SUM(f.severity = 'HIGH') AS high, MIN(f.first_seen) AS first_seen`,
-		maxComponentPackages).
-		Group("f.host_id, c.name, h.hostname, f.component_kind, f.component").
-		Order("critical DESC, high DESC, findings DESC, f.component").Limit(1000).Scan(&out).Error
+	// DISTINCT in a subquery so GROUP_CONCAT sees each package once, sorted.
+	err := db.Table("(?) AS d", r.filter(db, req).Select(`f.host_id, c.name AS client_name, h.hostname,
+		f.component_kind, f.component, f.pkg, f.type, f.cve, f.severity, f.first_seen`).Order("f.pkg")).
+		Select(`host_id, client_name, hostname, component_kind, component,
+		GROUP_CONCAT(DISTINCT pkg) AS packages, GROUP_CONCAT(DISTINCT type) AS types,
+		COUNT(DISTINCT pkg) AS pkg_count, COUNT(*) AS findings, COUNT(DISTINCT cve) AS cves,
+		SUM(severity = 'CRITICAL') AS critical, SUM(severity = 'HIGH') AS high, MIN(first_seen) AS first_seen`).
+		Group("host_id, client_name, hostname, component_kind, component").
+		Order("critical DESC, high DESC, findings DESC, component").Limit(1000).Scan(&out).Error
+	for i := range out {
+		out[i].PackageList = capList(out[i].PackageList, maxComponentPackages)
+		out[i].TypeList = sortedList(out[i].TypeList)
+	}
 	return out, err
 }
 
 // OldestCVEs lists open CVEs across active hosts, oldest first.
 func (r *FindingRepository) OldestCVEs(db *gorm.DB, clientName string, limit int) ([]entity.CVEAge, error) {
 	out := []entity.CVEAge{}
-	err := db.Raw(`SELECT f.cve AS cve, ANY_VALUE(f.severity) AS severity, ANY_VALUE(f.title) AS title,
+	err := db.Raw(`SELECT f.cve AS cve, MIN(f.severity) AS severity, MIN(f.title) AS title,
 			MIN(f.first_seen) AS first_seen, COUNT(DISTINCT f.host_id) AS hosts
 		FROM findings f
 		JOIN hosts h ON h.id = f.host_id
 		JOIN clients c ON c.id = h.client_id
 		WHERE f.resolved_at IS NULL AND f.status = 'open' AND h.revoked_at IS NULL AND (? = '' OR c.name = ?)
 		GROUP BY f.cve
-		ORDER BY first_seen, FIELD(ANY_VALUE(f.severity), 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN'), hosts DESC, f.cve
+		ORDER BY first_seen, `+severityRank("MIN(f.severity)")+`, hosts DESC, f.cve
 		LIMIT ?`, clientName, clientName, limit).Scan(&out).Error
 	return out, err
 }
+
+// severityRank orders severities worst first (CRITICAL = 0) in SQL.
+func severityRank(col string) string {
+	return "CASE " + col + " WHEN 'CRITICAL' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 WHEN 'LOW' THEN 3 ELSE 4 END"
+}
+
+// capList sorts a GROUP_CONCAT (comma-separated) list and keeps the first n.
+func capList(list string, n int) string {
+	items := strings.Split(list, ",")
+	slices.Sort(items)
+	return strings.Join(items[:min(n, len(items))], "\n")
+}
+
+func sortedList(list string) string { return capList(list, math.MaxInt) }

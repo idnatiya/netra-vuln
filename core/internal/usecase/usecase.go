@@ -14,13 +14,12 @@ import (
 	"unicode/utf8"
 
 	"github.com/go-playground/validator/v10"
-	driver "github.com/go-sql-driver/mysql"
 	"github.com/gofiber/fiber/v3"
 	"gorm.io/gorm"
 )
 
-// now returns UTC truncated to microseconds, matching DATETIME(6), so values
-// written and compared within one ingest are exactly equal.
+// now returns UTC truncated to microseconds, so values written and compared
+// within one ingest are exactly equal (times are stored as text).
 func now() time.Time { return time.Now().UTC().Truncate(time.Microsecond) }
 
 // NewToken returns a random 256-bit token (hex) and the hash to store.
@@ -38,9 +37,9 @@ func HashToken(token string) []byte {
 
 func isNotFound(err error) bool { return errors.Is(err, gorm.ErrRecordNotFound) }
 
+// isDuplicate reports a UNIQUE / PRIMARY KEY violation (SQLite's stable message).
 func isDuplicate(err error) bool {
-	var me *driver.MySQLError
-	return errors.As(err, &me) && me.Number == 1062 // ER_DUP_ENTRY
+	return err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed")
 }
 
 // invalid turns a validator error into a 400 with a readable message.

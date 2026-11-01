@@ -1,52 +1,23 @@
-# Central stack: MySQL + central (API + dashboard) + daily backups.
+# Central: one container (API + dashboard + SQLite + daily backups).
 # Put your own HTTPS reverse proxy in front of CENTRAL_PORT (the session
 # cookie is Secure, so the dashboard needs HTTPS).
-#   cp .env.example .env   # fill in secrets
+#   cp .env.example .env
 #   docker compose up -d --build
 #   docker compose exec central central admin create <username>
 name: vuln-central
 
 services:
-  mysql:
-    image: mysql:8.4.7
-    restart: unless-stopped
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set in .env}
-      MYSQL_DATABASE: vuln
-      MYSQL_USER: central
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set in .env}
-    volumes:
-      - mysql_data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u central -p\"$$MYSQL_PASSWORD\" --silent"]
-      interval: 5s
-      timeout: 5s
-      retries: 30
-      start_period: 30s
-
-  migrate:
-    build: &central_build
+  central:
+    build:
       context: .
       args:
         VERSION: ${CENTRAL_VERSION:-dev}
     image: vuln-central:${CENTRAL_VERSION:-dev}
-    command: ["migrate"]
-    environment: &central_env
-      CENTRAL_DSN: central:${MYSQL_PASSWORD}@tcp(mysql:3306)/vuln
-    depends_on:
-      mysql:
-        condition: service_healthy
-    restart: "no"
-
-  central:
-    build: *central_build
-    image: vuln-central:${CENTRAL_VERSION:-dev}
-    command: ["serve"]
+    command: ["serve"] # applies migrations on start
     restart: unless-stopped
     ports:
       - "${CENTRAL_PORT:-127.0.0.1:8080}:8080"
     environment:
-      <<: *central_env
       CENTRAL_ADDR: ":8080"
       # Client IPs come from the proxy's X-Forwarded-For (trusted from private/loopback addresses only).
       CENTRAL_TRUST_PROXY: ${CENTRAL_TRUST_PROXY:-true}
@@ -54,9 +25,11 @@ services:
       # /install.sh (dashboard: Add agent) needs both; empty version = disabled.
       CENTRAL_PUBLIC_URL: ${CENTRAL_PUBLIC_URL:?set in .env}
       CENTRAL_AGENT_VERSION: ${CENTRAL_AGENT_VERSION:-}
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
+      # Daily consistent copy into /data/backups (UTC time), kept this many days.
+      CENTRAL_BACKUP_AT: ${BACKUP_AT:-02:30}
+      CENTRAL_BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+    volumes:
+      - central_data:/data
     healthcheck:
       test: ["CMD", "/usr/local/bin/central", "healthcheck"]
       interval: 10s
@@ -64,21 +37,5 @@ services:
       retries: 6
       start_period: 10s
 
-  backup:
-    image: mysql:8.4.7
-    restart: unless-stopped
-    entrypoint: ["/bin/bash", "/backup.sh"]
-    environment:
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
-      BACKUP_AT: ${BACKUP_AT:-02:30}
-      BACKUP_RUN_NOW: ${BACKUP_RUN_NOW:-0}
-    volumes:
-      - ./scripts/backup.sh:/backup.sh:ro
-      - ./backups:/backups
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-
 volumes:
-  mysql_data:
+  central_data:

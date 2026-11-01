@@ -90,7 +90,7 @@ func HostToResponse(h entity.HostSummary) model.HostResponse {
 		Arch: h.Meta.Arch, KernelRunning: h.Meta.KernelRunning, AgentVersion: h.Meta.AgentVersion,
 		TrivyVersion: h.TrivyVersion, RebootRequired: h.Meta.RebootRequired,
 		AutoUpdateEnabled: h.Meta.AutoUpdateEnabled, LastHeartbeatAt: h.LastHeartbeatAt,
-		LastScanAt: h.LastScanAt, LastScanStatus: string(h.LastScanStatus), LastOKScanAt: h.LastOKScanAt,
+		LastScanAt: h.LastScanAt, LastScanStatus: string(h.LastScanStatus), LastOKScanAt: h.LastOKScanAt.Ptr(),
 		CreatedAt: h.CreatedAt, RevokedAt: h.RevokedAt,
 		OpenCritical: h.OpenCritical, OpenHigh: h.OpenHigh, Accepted: h.Accepted, FalsePositive: h.FalsePositive,
 		StaleScan: h.StaleScan, StaleHeartbeat: h.StaleHeartbeat,
@@ -117,7 +117,7 @@ func ComponentToResponse(c entity.ComponentSummary) model.ComponentResponse {
 	return model.ComponentResponse{
 		HostID: c.HostID, Client: c.ClientName, Hostname: c.Hostname, Kind: string(c.Kind), Key: c.Key,
 		Packages: c.Packages(), Types: c.Types(), PkgCount: c.PkgCount, Findings: c.Findings, CVEs: c.CVEs,
-		Critical: c.Critical, High: c.High, FirstSeen: c.FirstSeen,
+		Critical: c.Critical, High: c.High, FirstSeen: c.FirstSeen.Time,
 	}
 }
 
@@ -126,7 +126,7 @@ func TrendToResponse(p entity.TrendPoint) model.TrendResponse {
 }
 
 func CVEAgeToResponse(v entity.CVEAge) model.CVEAgeResponse {
-	return model.CVEAgeResponse{CVE: v.CVE, Severity: v.Severity, Title: v.Title, FirstSeen: v.FirstSeen, Hosts: v.Hosts}
+	return model.CVEAgeResponse{CVE: v.CVE, Severity: v.Severity, Title: v.Title, FirstSeen: v.FirstSeen.Time, Hosts: v.Hosts}
 }
 
 func DistributionToResponse(d entity.Distribution) *model.DistributionResponse {

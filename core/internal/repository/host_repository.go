@@ -5,7 +5,6 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 
 	"netra-vuln/core/internal/entity"
 )
@@ -29,9 +28,10 @@ func (r *HostRepository) FindByIdWithClient(db *gorm.DB, host *entity.Host, id i
 	return db.Joins("Client").Where("hosts.id = ?", id).Take(host).Error
 }
 
-// FindForUpdate locks the host row (SELECT ... FOR UPDATE); use inside a transaction.
+// FindForUpdate loads the host inside a transaction; the transaction already
+// holds SQLite's write lock (BEGIN IMMEDIATE), so no row lock is needed.
 func (r *HostRepository) FindForUpdate(db *gorm.DB, host *entity.Host, clientID int64, hostname string) error {
-	return db.Clauses(clause.Locking{Strength: "UPDATE"}).
+	return db.
 		Where("client_id = ? AND hostname = ?", clientID, hostname).Take(host).Error
 }
 
@@ -106,7 +106,7 @@ func (r *HostRepository) Distribution(db *gorm.DB) (entity.Distribution, error) 
 		expr string
 		dst  *[]entity.Count
 	}{
-		{"TRIM(CONCAT(os_name, ' ', os_version))", &d.OS},
+		{"TRIM(os_name || ' ' || os_version)", &d.OS},
 		{"agent_version", &d.AgentVersions},
 		{"trivy_version", &d.TrivyVersions},
 	} {

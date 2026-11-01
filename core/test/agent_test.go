@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"netra-vuln/core/internal/usecase"
 	"strings"
 	"testing"
 	"time"
@@ -33,7 +34,7 @@ func TestEnroll(t *testing.T) {
 	code, hostTok := enrollStatus(t, "client_a", tok, "vm1")
 	require.Equal(t, http.StatusOK, code)
 	assert.Len(t, hostTok, 64)
-	assert.Equal(t, 1, count(t, "SELECT COUNT(*) FROM hosts WHERE host_token_hash = UNHEX(SHA2(?, 256))", hostTok),
+	assert.Equal(t, 1, count(t, "SELECT COUNT(*) FROM hosts WHERE host_token_hash = ?", usecase.HashToken(hostTok)),
 		"token must be stored as its SHA-256 hash")
 
 	code, _ = enrollStatus(t, "client_a", tok, "vm1")

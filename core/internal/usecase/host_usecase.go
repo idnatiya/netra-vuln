@@ -8,7 +8,6 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 
 	"netra-vuln/core/internal/entity"
 	"netra-vuln/core/internal/model"
@@ -28,7 +27,7 @@ func (c *HostUseCase) Delete(ctx context.Context, id int64) error {
 	tx := c.DB.WithContext(ctx).Begin()
 	defer tx.Rollback()
 	host := new(entity.Host)
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(host, id).Error; err != nil {
+	if err := tx.First(host, id).Error; err != nil {
 		if isNotFound(err) {
 			return fiber.ErrNotFound
 		}

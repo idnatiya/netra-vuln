@@ -1,16 +1,14 @@
-MYSQL_COMPOSE := docker compose -f compose.dev.yml
-TEST_MYSQL_DSN ?= root:test@tcp(127.0.0.1:3317)/
-CENTRAL_DSN ?= root:test@tcp(127.0.0.1:3317)/vuln
+CENTRAL_DB ?= dev-out/central.db
 # The laptop's Tailscale IP when available (so tailnet VMs can report), else local only.
 # Uncommon port: 8080/8090 are often taken by other projects.
 CENTRAL_ADDR ?= $(or $(shell ip=$$(tailscale ip -4 2>/dev/null) && printf '%s\n' "$$ip" | awk 'NR == 1 && /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$$/ { print; exit }'),127.0.0.1):18080
 DEV_ADMIN_USER ?= admin
 # Agent release that the dev /install.sh downloads.
-CENTRAL_AGENT_VERSION ?= v0.2.0
+CENTRAL_AGENT_VERSION ?= v0.2.1
 DEV_ADMIN_PASSWORD_FILE := dev-out/admin-password
 
 .DEFAULT_GOAL := help
-.PHONY: help dev dev-admin dev-down test mysql-up central central-dev \
+.PHONY: help dev dev-admin dev-reset test central central-dev \
 	dashboard-deps dashboard-dev dashboard-test compose-up compose-down
 
 help: ## Show this help
@@ -18,8 +16,7 @@ help: ## Show this help
 
 # --- Local development -------------------------------------------------------
 
-dev: mysql-up dist/central dashboard-deps ## Run MySQL + central + dashboard together (Ctrl+C stops all)
-	@CENTRAL_DSN='$(CENTRAL_DSN)' dist/central migrate
+dev: dist/central dashboard-deps ## Run central (SQLite in dev-out/) + dashboard together (Ctrl+C stops all)
 	@$(MAKE) --no-print-directory dev-admin
 	@echo ""
 	@echo "  dashboard  http://localhost:11270   (user: $(DEV_ADMIN_USER), password: $(DEV_ADMIN_PASSWORD_FILE))"
@@ -28,7 +25,7 @@ dev: mysql-up dist/central dashboard-deps ## Run MySQL + central + dashboard tog
 	@# Stop both when either exits (e.g. central cannot bind its port), so the
 	@# dashboard never keeps proxying to whatever else owns that port.
 	@stopped=; trap 'stopped=1' INT TERM; trap 'kill $$(jobs -p) 2>/dev/null' EXIT; \
-	CENTRAL_DSN='$(CENTRAL_DSN)' CENTRAL_ADDR='$(CENTRAL_ADDR)' CENTRAL_PUBLIC_URL='http://$(CENTRAL_ADDR)' \
+	CENTRAL_DB='$(CENTRAL_DB)' CENTRAL_ADDR='$(CENTRAL_ADDR)' CENTRAL_PUBLIC_URL='http://$(CENTRAL_ADDR)' \
 	CENTRAL_AGENT_VERSION='$(CENTRAL_AGENT_VERSION)' dist/central serve & c=$$!; \
 	CENTRAL_DEV_URL='http://$(CENTRAL_ADDR)' pnpm -C dashboard dev & v=$$!; \
 	while [ -z "$$stopped" ] && kill -0 $$c 2>/dev/null && kill -0 $$v 2>/dev/null; do sleep 1; done; \
@@ -37,30 +34,26 @@ dev: mysql-up dist/central dashboard-deps ## Run MySQL + central + dashboard tog
 	exit 1
 
 dev-admin: dist/central ## Create the dev admin once (password kept in dev-out/admin-password)
-	@if CENTRAL_DSN='$(CENTRAL_DSN)' dist/central admin list | awk 'NR > 1 {print $$1}' | grep -qx '$(DEV_ADMIN_USER)'; then \
+	@if CENTRAL_DB='$(CENTRAL_DB)' dist/central admin list | awk 'NR > 1 {print $$1}' | grep -qx '$(DEV_ADMIN_USER)'; then \
 		echo "admin '$(DEV_ADMIN_USER)' exists"; \
 	else \
 		mkdir -p $(dir $(DEV_ADMIN_PASSWORD_FILE)); \
 		[ -s $(DEV_ADMIN_PASSWORD_FILE) ] || (umask 077; openssl rand -base64 18 > $(DEV_ADMIN_PASSWORD_FILE)); \
-		CENTRAL_DSN='$(CENTRAL_DSN)' dist/central admin create $(DEV_ADMIN_USER) < $(DEV_ADMIN_PASSWORD_FILE); \
+		CENTRAL_DB='$(CENTRAL_DB)' dist/central admin create $(DEV_ADMIN_USER) < $(DEV_ADMIN_PASSWORD_FILE); \
 	fi
 
-dev-down: ## Stop the dev MySQL (its data is on tmpfs and is lost)
-	$(MYSQL_COMPOSE) down
-
-mysql-up: ## Start the dev/test MySQL on 127.0.0.1:3317
-	$(MYSQL_COMPOSE) up -d --wait
+dev-reset: ## Delete the dev database (dev-out/central.db)
+	rm -f $(CENTRAL_DB) $(CENTRAL_DB)-wal $(CENTRAL_DB)-shm
 
 # Fixed output path so the macOS firewall approval sticks (go run uses a new temp path each time).
 dist/central: FORCE
 	@go build -o dist/central ./core/cmd/central
 
 central: dist/central ## Admin CLI on the dev DB, e.g. make central ARGS="client create acme"
-	CENTRAL_DSN='$(CENTRAL_DSN)' dist/central $(ARGS)
+	CENTRAL_DB='$(CENTRAL_DB)' dist/central $(ARGS)
 
-central-dev: mysql-up dist/central ## Run central only (no dashboard), e.g. for the VM loop
-	CENTRAL_DSN='$(CENTRAL_DSN)' dist/central migrate
-	CENTRAL_DSN='$(CENTRAL_DSN)' CENTRAL_ADDR='$(CENTRAL_ADDR)' dist/central serve
+central-dev: dist/central ## Run central only (no dashboard), e.g. for the VM loop
+	CENTRAL_DB='$(CENTRAL_DB)' CENTRAL_ADDR='$(CENTRAL_ADDR)' dist/central serve
 
 FORCE:
 
@@ -78,9 +71,9 @@ dashboard-test: dashboard-deps ## Dashboard unit tests + typecheck
 
 # --- Tests & builds ----------------------------------------------------------
 
-test: dashboard-test mysql-up ## Dashboard tests + Go vet + Go tests (core/test against the dev MySQL)
+test: dashboard-test ## Dashboard tests + Go vet + Go tests (core/test on a temp SQLite file)
 	go vet ./...
-	TEST_MYSQL_DSN='$(TEST_MYSQL_DSN)' go test -count=1 ./...
+	go test -count=1 ./...
 
 # --- Production stack (.env must exist; see .env.example) -----
 

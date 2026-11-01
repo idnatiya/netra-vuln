@@ -32,5 +32,8 @@ coverage.*
 
 # Central compose runtime data
 /backups/
+*.db
+*.db-wal
+*.db-shm
 /go.work
 /go.work.sum

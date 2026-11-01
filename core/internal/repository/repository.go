@@ -1,4 +1,4 @@
-// Package repository is the MySQL persistence (GORM). Methods take the *gorm.DB
+// Package repository is the SQLite persistence (GORM). Methods take the *gorm.DB
 // to use, so use cases pass a transaction when they need one.
 package repository
 

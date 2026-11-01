@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"netra-vuln/core/internal/config"
 	"netra-vuln/core/internal/delivery/http/middleware"
 )
 
@@ -68,4 +69,15 @@ func TestAdminAllowCIDRs(t *testing.T) {
 
 	_, err := middleware.ParseCIDRs("10.0.0.0/8 nope")
 	assert.Error(t, err)
+}
+
+func TestBackup(t *testing.T) {
+	ClearAll(t)
+	enrollHost(t, "acme", "web-01")
+	file := filepath.Join(t.TempDir(), "copy.db")
+	require.NoError(t, config.Backup(db, file))
+	fi, err := os.Stat(file)
+	require.NoError(t, err)
+	assert.Positive(t, fi.Size())
+	assert.Error(t, config.Backup(db, file), "never overwrites an existing backup")
 }

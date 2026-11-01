@@ -13,12 +13,15 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY core ./core
 ARG VERSION=dev
-RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/central ./core/cmd/central
+RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/central ./core/cmd/central \
+ && mkdir -p /out/data/backups
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/central /usr/local/bin/central
 COPY --from=dashboard /app/dist /srv/dashboard
-ENV CENTRAL_DASHBOARD_DIR=/srv/dashboard
+# /data holds the SQLite database and its daily backups (a volume, owned by nonroot).
+COPY --from=build --chown=65532:65532 /out/data /data
+ENV CENTRAL_DASHBOARD_DIR=/srv/dashboard CENTRAL_DB=/data/central.db CENTRAL_BACKUP_DIR=/data/backups
 USER nonroot:nonroot
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/central"]

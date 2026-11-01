@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"netra-vuln/core/internal/usecase"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
@@ -30,7 +32,7 @@ func TestLoginSetsHardenedCookie(t *testing.T) {
 	var me model.WebResponse[model.MeResponse]
 	require.NoError(t, json.Unmarshal(body, &me))
 	assert.Equal(t, "ops", me.Data.Username)
-	assert.Equal(t, 1, count(t, "SELECT COUNT(*) FROM admin_sessions WHERE token_hash = UNHEX(SHA2(?, 256))", c.Value),
+	assert.Equal(t, 1, count(t, "SELECT COUNT(*) FROM admin_sessions WHERE token_hash = ?", usecase.HashToken(c.Value)),
 		"session token must be stored as its SHA-256 hash")
 
 	for _, creds := range [][2]string{{"ops", "wrong password!!"}, {"nobody", password}, {"", ""}} {
@@ -39,7 +41,7 @@ func TestLoginSetsHardenedCookie(t *testing.T) {
 		assert.Contains(t, string(b), `"errors"`, "admin errors use the WebResponse envelope")
 	}
 
-	require.NoError(t, db.Exec("UPDATE admin_users SET disabled_at = NOW(6) WHERE username = 'ops'").Error)
+	require.NoError(t, db.Exec("UPDATE admin_users SET disabled_at = ? WHERE username = 'ops'", time.Now().UTC()).Error)
 	code, _ := adminDo(t, "POST", "/login", `{"username":"ops","password":"`+password+`"}`, "")
 	assert.Equal(t, 401, code, "disabled user")
 }
@@ -64,7 +66,7 @@ func TestSessionLifecycle(t *testing.T) {
 	code, _ := adminDo(t, "GET", "/me", "", cookie)
 	require.Equal(t, 200, code)
 
-	require.NoError(t, db.Exec("UPDATE admin_sessions SET expires_at = NOW(6) - INTERVAL 1 SECOND").Error)
+	require.NoError(t, db.Exec("UPDATE admin_sessions SET expires_at = ?", time.Now().UTC().Add(-time.Second)).Error)
 	code, _ = adminDo(t, "GET", "/me", "", cookie)
 	assert.Equal(t, 401, code, "expired session")
 

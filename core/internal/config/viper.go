@@ -13,7 +13,8 @@ import (
 // and lets the environment override it. The env names predate Viper and are
 // kept so the compose file and .env stay the same:
 //
-//	CENTRAL_DSN          database.dsn
+//	CENTRAL_DB           database.path (SQLite file)
+//	CENTRAL_BACKUP_DIR / CENTRAL_BACKUP_AT / CENTRAL_BACKUP_KEEP_DAYS  backup.*
 //	CENTRAL_ADDR         web.addr
 //	CENTRAL_TRUST_PROXY  web.trust_proxy
 //	CENTRAL_LOG_LEVEL    log.level (logrus level, 4 = info)
@@ -32,12 +33,15 @@ func NewViper() *viper.Viper {
 	config.SetDefault("web.addr", ":8080")
 	config.SetDefault("web.trust_proxy", false)
 	config.SetDefault("log.level", 4)
-	config.SetDefault("database.pool.idle", 10)
-	config.SetDefault("database.pool.max", 20)
-	config.SetDefault("database.pool.lifetime", 300)
+	config.SetDefault("database.path", "central.db")
+	config.SetDefault("backup.at", "02:30")
+	config.SetDefault("backup.keep_days", 14)
 
 	for key, env := range map[string]string{
-		"database.dsn":          "CENTRAL_DSN",
+		"database.path":         "CENTRAL_DB",
+		"backup.dir":            "CENTRAL_BACKUP_DIR",
+		"backup.at":             "CENTRAL_BACKUP_AT",
+		"backup.keep_days":      "CENTRAL_BACKUP_KEEP_DAYS",
 		"web.addr":              "CENTRAL_ADDR",
 		"web.trust_proxy":       "CENTRAL_TRUST_PROXY",
 		"log.level":             "CENTRAL_LOG_LEVEL",

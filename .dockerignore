@@ -6,6 +6,9 @@ dashboard/dist
 dev-out
 .playwright-mcp
 backups
+*.db
+*.db-wal
+*.db-shm
 .env
 **/*.env
 !**/.env.example

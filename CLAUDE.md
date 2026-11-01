@@ -8,33 +8,31 @@ I manage 26 Linux VMs belonging to several different clients, spread across vari
 
 Build the system using an **agent + central** model:
 - **Agent** (separate repo, see "Agent"): a small non-AI program installed on each VM. It runs Trivy, slims down the results, and sends them to central (it can also run standalone without central).
-- **Central** (this repo): receiving API + MySQL + an admin web dashboard.
+- **Central** (this repo): receiving API + SQLite + an admin web dashboard.
 
 Work in phases (see "Phases"). At the end of each phase, stop and show the results before continuing. If a design decision is ambiguous, ask first.
 
 ## Mandatory Principles
 1. **Passive agent**: the agent ONLY sends data and fetches declarative (read-only) config. The agent MUST NOT have any feature to run commands, scripts, or auto-updates from central in any form.
 2. **Push only**: all communication is initiated by the agent to central. Central never connects to a VM. Transport is HTTPS by default; plain HTTP is allowed only over an already-encrypted network (e.g. Tailscale), and the agent logs a warning when it is used.
-3. **VMs never touch MySQL directly.** Only the central API accesses the database.
+3. **VMs never touch the database directly.** Only the central API accesses it.
 4. **Multi-tenant**: all data is bound to a `client`. A token belonging to client A must not be able to send or read data for client B.
 5. **Simple and maintainable**: avoid unnecessary dependencies. Keep scope small.
 
 ## Stack
 - Language: **Go** (latest stable)
 - Central HTTP: **Fiber v3** (fasthttp)
-- Database: **MySQL 8**
-- Central libraries (after [khannedy/golang-clean-architecture](https://github.com/khannedy/golang-clean-architecture)): GORM (mysql driver), Viper, Logrus (JSON), go-playground/validator, golang-migrate (embedded `iofs`), testify
+- Database: **SQLite** (one file, WAL; pure-Go driver, no CGO) — ample for a few dozen VMs and keeps central at tens of MB of RAM
+- Central libraries (after [khannedy/golang-clean-architecture](https://github.com/khannedy/golang-clean-architecture)): GORM (`github.com/glebarez/sqlite`), Viper, Logrus (JSON), go-playground/validator, testify; migrations are embedded SQL files applied by a small runner in `config/migrate.go` (golang-migrate's SQLite driver would register a second `sqlite` driver)
 - Dashboard: **Vue 3 + Vite + TypeScript + Tailwind v4 + shadcn-vue** SPA in `/dashboard` (admin only), built into the central image and served by central, talking to its `/api/admin/v1`
-- Central deployment: **Docker Compose** (central API with the dashboard SPA + MySQL + daily backup); TLS comes from the operator's own reverse proxy
+- Central deployment: **Docker Compose** (one container: central API with the dashboard SPA, the SQLite file and its daily backups on a volume); TLS comes from the operator's own reverse proxy
 - CI: **GitLab CI** (`.gitlab-ci.yml`)
 
 ## Repo Layout
 Go module `netra-vuln` (requires `github.com/idnatiya/netra-vuln-agent` for the contract).
 ```
 /core         # central API Go code (cmd, db/migrations, internal, test)
-/scripts      # backup.sh (compose backup service)
 Dockerfile, docker-compose.yml, .env.example   # production stack
-compose.dev.yml                                # MySQL for make dev / tests
 /dashboard    # admin SPA (Vue + shadcn-vue, clean architecture)
 /docs         # README, architecture, install guide
 .gitlab-ci.yml
@@ -70,7 +68,7 @@ Code layout follows khannedy/golang-clean-architecture under `core/`:
 ```
 cmd/central/main.go      # CLI subcommands; serve = NewViper > NewLogger > NewDatabase > NewValidator > NewFiber > Bootstrap
 config.json              # dev defaults (env overrides)
-db/migrations/           # golang-migrate <timestamp>_<name>.{up,down}.sql, embedded
+db/migrations/           # <timestamp>_<name>.up.sql, embedded, applied in order (schema_migrations)
 internal/
   entity/                # GORM table structs + pure rules (finding key, component, report normalize/validate, stale, overview)
   model/ model/converter # admin request (validate tags) / response types, WebResponse; entity -> model
@@ -78,7 +76,7 @@ internal/
   usecase/               # one use case per resource; returns *fiber.Error, owns transactions
   delivery/http/         # controllers; middleware/ (host auth, session, same-origin, rate limit, body); route/route.go
   config/                # viper, logrus, gorm (DSN), validator, fiber (error handler), migrate, app.go (Bootstrap)
-test/                    # black-box tests through app.Test against MySQL
+test/                    # black-box tests through app.Test against a temp SQLite file
 ```
 Admin API (`/api/admin/v1/*`) responses use `model.WebResponse{data, paging, errors}`; agent API (`/api/v1/*`) responses are `pkg/wire` types as-is and errors plain text. Read report bodies with `BodyRaw()` + explicit gunzip, not `c.Body()` (on decode errors it returns the error text as the body). A raw body over `BodyLimit` is cut off by fasthttp (connection reset), so the agent spools and retries it.
 
@@ -91,12 +89,13 @@ Admin API (`/api/admin/v1/*`) responses use `model.WebResponse{data, paging, err
 - Request size limits, read/write timeouts
 - TLS is handled by the operator's reverse proxy in front of central (nginx, Traefik, `tailscale serve`, ...); central listens on plain HTTP bound to 127.0.0.1 or a private interface. Central itself sets the security headers (CSP, HSTS, frame/nosniff/referrer) and enforces `CENTRAL_ADMIN_ALLOW_CIDRS` on the dashboard, `/api/admin` and `/mcp` (agents never restricted)
 
-### MySQL schema (as migrations)
+### Database schema (SQLite, as migrations)
 - `clients` (id, name unique, scan_config JSON NULL, created_at)
 - `enroll_tokens` (id, client_id, token_hash, created_at, revoked_at)
 - `hosts` (id, client_id, hostname, host_token_hash, os_family, os_name, os_version, arch, kernel_running, agent_version, trivy_version, reboot_required, auto_update_enabled, last_heartbeat_at, last_scan_at, last_scan_status, created_at, revoked_at; UNIQUE(client_id, hostname))
 - `scans` (id, host_id, scanned_at, status, error_message, duration_seconds, total, critical, high, trivy_version)
-- `findings` (id, host_id, target, type, cve, pkg, pkg_path, component_kind, component, installed_version, fixed_version, severity, title, first_seen, last_seen, resolved_at NULL, status ENUM('open','accepted','false_positive') default 'open', note; UNIQUE(host_id, finding_key) where finding_key = SHA-256(cve, pkg, installed_version, target[, pkg_path when set]), because a 5-column UNIQUE exceeds InnoDB's 3072-byte key limit with utf8mb4)
+- `findings` (id, host_id, target, type, cve, pkg, pkg_path, component_kind, component, installed_version, fixed_version, severity, title, first_seen, last_seen, resolved_at NULL, status CHECK IN ('open','accepted','false_positive') default 'open', note; UNIQUE(host_id, finding_key) where finding_key = SHA-256(cve, pkg, installed_version, target[, pkg_path when set]): one short unique key)
+- Times are UTC, stored as text `2006-01-02 15:04:05.999999999-07:00` (`_time_format=sqlite`), so `date()` and string comparison work; SQL-computed times (MIN/MAX/date()) come back as text and are read via `entity.SQLTime`. Hashes are 32-byte BLOBs. Transactions use `BEGIN IMMEDIATE` (`_txlock=immediate`) instead of `SELECT ... FOR UPDATE`; one connection (`SetMaxOpenConns(1)`), so never use `c.DB` inside an open transaction
 - Indexes needed for dashboard queries
 
 ### Report ingest logic (in a single transaction)
@@ -130,16 +129,16 @@ Rules:
 - Tokens are read-only unless created with "Allow triage" (`mcp_tokens.can_triage`): only then `triage_finding` / `triage_component` are listed (destructive hint, so clients confirm). Their notes get `[via MCP: <token name>]` and central logs each verdict. The server is built per request from the token's `Auth`. No LLM calls inside central.
 
 ## Deployment
-- `docker-compose.yml` (repo root, image from `Dockerfile`): `mysql` (named volume), `migrate` (one-shot `central migrate`), `central` (distroless, dashboard SPA baked in at `/srv/dashboard`, published on `CENTRAL_PORT`, default `127.0.0.1:8080`, for the operator's HTTPS reverse proxy; the session cookie is Secure, so the dashboard needs HTTPS; optional `ADMIN_ALLOW_CIDRS`; healthcheck `central healthcheck`), `backup` (`scripts/backup.sh`: daily `mysqldump` into `./backups`, `BACKUP_KEEP_DAYS`). Configure via `.env` (from `.env.example`); first admin: `docker compose exec central central admin create <name>`. `.dockerignore` keeps `dev-out/` and other local data out of the build context.
-- Local dev: `make dev` runs MySQL (127.0.0.1:3317, tmpfs, `compose.dev.yml`) + central (port 18080: Tailscale IP if up, else 127.0.0.1) + the dashboard (http://localhost:11270) in one terminal; Ctrl+C stops all, and if either process dies the other is stopped too. It migrates and seeds admin `admin` once (password in `dev-out/admin-password`). `make help` lists targets; `make dev-down` drops the dev DB; admin CLI via `make central ARGS="..."`.
+- `docker-compose.yml` (repo root, image from `Dockerfile`): `central` only (distroless; `serve` applies migrations; database `/data/central.db` on the `central_data` volume, daily `VACUUM INTO` backup to `/data/backups` at `BACKUP_AT`, kept `BACKUP_KEEP_DAYS`, also `central backup <file>`; dashboard SPA baked in at `/srv/dashboard`, published on `CENTRAL_PORT`, default `127.0.0.1:8080`, for the operator's HTTPS reverse proxy; the session cookie is Secure, so the dashboard needs HTTPS; optional `ADMIN_ALLOW_CIDRS`; healthcheck `central healthcheck`). Configure via `.env` (from `.env.example`); first admin: `docker compose exec central central admin create <name>`. `.dockerignore` keeps `dev-out/` and other local data out of the build context.
+- Local dev: `make dev` runs central (SQLite in `dev-out/central.db`) (port 18080: Tailscale IP if up, else 127.0.0.1) + the dashboard (http://localhost:11270) in one terminal; Ctrl+C stops all, and if either process dies the other is stopped too. It migrates and seeds admin `admin` once (password in `dev-out/admin-password`). `make help` lists targets; `make dev-reset` deletes the dev DB; admin CLI via `make central ARGS="..."`.
 - Sample VM loop over Tailscale: `make dev` listens on the laptop's Tailscale IP when `tailscale` is up (else `127.0.0.1:18080`; override with `CENTRAL_ADDR`), create the client in the dashboard, then in the agent repo `make scan-dev ARGS="-e @<enroll-vars.yml>"` (a mode-600 file with `vuln_agent_enroll_token`, never committed; add `-e vuln_agent_force_enroll=true` after the dev DB was reset).
-- Tests: `make test` (dashboard tests, starts the dev MySQL, `go vet`, Go tests with `TEST_MYSQL_DSN`; the suite recreates database `vuln_test`).
+- Tests: `make test` (dashboard tests, `go vet`, Go tests; no Docker: the suite creates a temp SQLite file).
 
 ## CI
 - GitLab CI: lint, test, build; central image to the GitLab Container Registry (agent packaging and CI live in the agent repo)
 
 ## Testing
-- All Go tests live in `core/test/` (package `test`, black-box, testify): requests go through the Fiber app (`app.Test`) into real MySQL; no fakes. `ClearAll` empties the tables per test; tests change timestamps in the DB instead of injecting a clock.
+- All Go tests live in `core/test/` (package `test`, black-box, testify): requests go through the Fiber app (`app.Test`) into a real SQLite database; no fakes. `ClearAll` empties the tables per test; tests change timestamps in the DB instead of injecting a clock.
 - Cover ingest logic (new finding, still present, resolved, reappeared, scan error), agent status codes and contract (strict decode of responses), tenant isolation (client A token rejected for client B), admin auth/session/CSRF, dashboard queries, and the pure entity rules
 
 ## Documentation (`/docs`)

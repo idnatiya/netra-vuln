@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"netra-vuln/core/internal/usecase"
 	"strings"
 	"testing"
 	"time"
@@ -67,7 +68,7 @@ func TestMcpTokens(t *testing.T) {
 	require.Len(t, list, 1)
 	assert.Equal(t, "laptop", list[0].Name)
 	assert.Nil(t, list[0].LastUsedAt)
-	assert.Equal(t, 1, count(t, "SELECT COUNT(*) FROM mcp_tokens WHERE token_hash = UNHEX(SHA2(?, 256))", tok.Token), "stored hashed")
+	assert.Equal(t, 1, count(t, "SELECT COUNT(*) FROM mcp_tokens WHERE token_hash = ?", usecase.HashToken(tok.Token)), "stored hashed")
 
 	code, _ = mcpCall(t, "", "list_clients", map[string]any{})
 	assert.Equal(t, http.StatusUnauthorized, code, "no token")
