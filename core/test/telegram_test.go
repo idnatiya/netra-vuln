@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/idnatiya/netra-vuln-agent/pkg/wire"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -124,6 +125,35 @@ func TestTelegramNotifier(t *testing.T) {
 	assert.NotContains(t, got[2][0], "api-01")
 	require.NoError(t, uc.Telegram.Tick(ctx))
 	assert.Empty(t, drain())
+}
+
+func TestTelegramEOLOncePerLabel(t *testing.T) {
+	ClearAll(t)
+	drain := fakeTelegram(t)
+	fakeEOL(t)
+	ctx := context.Background()
+	_ = uc.EOL.Refresh(ctx) // products without fake data fail; php/vue are enough
+	h := enrollHost(t, "acme", "web-01")
+	require.NoError(t, uc.Telegram.AddChat(ctx, 1, ""))
+	require.NoError(t, uc.Telegram.Tick(ctx)) // first tick: state only
+
+	rep := report(h, "ok")
+	rep.Software = []wire.Software{
+		{Name: "vue", Version: "2.7.16", Path: "/srv/frontend"},
+		{Name: "vue", Version: "2.7.16", Path: "/srv/frontend-stage"},
+	}
+	require.Equal(t, http.StatusNoContent, agentStatus(t, "POST", "/api/v1/report", h.Token, mustJSON(rep), true))
+	require.NoError(t, uc.Telegram.Tick(ctx))
+	var eol []string
+	for _, m := range drain() {
+		if strings.Contains(m.Text, "End of life") {
+			eol = append(eol, m.Text)
+		}
+	}
+	require.Len(t, eol, 1)
+	assert.Equal(t, 1, strings.Count(eol[0], "vue 2"), eol[0])
+	require.NoError(t, uc.Telegram.Tick(ctx))
+	assert.Empty(t, drain(), "an alert raised from two paths is not resent")
 }
 
 func TestTelegramCommands(t *testing.T) {

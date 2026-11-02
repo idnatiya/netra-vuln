@@ -3,6 +3,7 @@ package entity
 import (
 	"database/sql/driver"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -36,15 +37,16 @@ type HostSummary struct {
 	EOLSoon []string `gorm:"-"`
 }
 
-// SetEOL records the labels of software that is end of life or ends soon.
+// SetEOL records the labels of software that is end of life or ends soon,
+// once each (the same version often runs from several paths).
 func (h *HostSummary) SetEOL(software []SoftwareEOL) {
 	h.EOL, h.EOLSoon = []string{}, []string{}
 	for _, s := range software {
-		switch s.Status {
-		case EOLStatusEOL:
-			h.EOL = append(h.EOL, s.Label())
-		case EOLStatusSoon:
-			h.EOLSoon = append(h.EOLSoon, s.Label())
+		switch l := s.Label(); {
+		case s.Status == EOLStatusEOL && !slices.Contains(h.EOL, l):
+			h.EOL = append(h.EOL, l)
+		case s.Status == EOLStatusSoon && !slices.Contains(h.EOLSoon, l):
+			h.EOLSoon = append(h.EOLSoon, l)
 		}
 	}
 }
