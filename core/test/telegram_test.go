@@ -189,6 +189,19 @@ func TestTelegramCommands(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, reply, "Open: 1 critical")
 
+	require.NoError(t, uc.Telegram.AddChat(ctx, 1, ""))
+	require.NoError(t, db.Exec("UPDATE hosts SET last_heartbeat_at = ?", time.Now().UTC()).Error)
+	reply, err = uc.Telegram.Handle(ctx, 1, "/hosts")
+	require.NoError(t, err)
+	assert.Contains(t, reply, "<b>acme</b> — 1 host(s)")
+	assert.Contains(t, reply, "🔴 api-01 — 1 critical")
+	reply, err = uc.Telegram.Handle(ctx, 1, "/hosts ACME")
+	require.NoError(t, err)
+	assert.Equal(t, "🔴 web-01 — 1 critical", reply)
+	reply, err = uc.Telegram.Handle(ctx, 2, "/hosts globex")
+	require.NoError(t, err)
+	assert.Equal(t, "Client not found.", reply, "client chat cannot list another client")
+
 	reply, _ = uc.Telegram.Handle(ctx, 2, "/nope")
 	assert.True(t, strings.HasPrefix(reply, "Commands:"))
 }

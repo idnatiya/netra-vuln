@@ -383,6 +383,7 @@ func (c *TelegramUseCase) RunBot(ctx context.Context) {
 
 const tgHelp = `Commands:
 /status — summary of open findings
+/hosts [client] — all hosts, worst first
 /host &lt;hostname&gt; — host details and what to fix
 /cve &lt;CVE-ID&gt; — hosts affected by a CVE`
 
@@ -409,6 +410,25 @@ func (c *TelegramUseCase) Handle(ctx context.Context, chatID int64, text string)
 			return "", err
 		}
 		return c.digestFor(db, *chat, hosts)
+	case cmd == "/hosts":
+		hosts, err := c.summaries(db)
+		if err != nil {
+			return "", err
+		}
+		hosts = visible(*chat, hosts)
+		if arg != "" {
+			var mine []entity.HostSummary
+			for _, h := range hosts {
+				if strings.EqualFold(h.ClientName, arg) {
+					mine = append(mine, h)
+				}
+			}
+			if len(mine) == 0 {
+				return "Client not found.", nil
+			}
+			hosts = mine
+		}
+		return entity.MsgHosts(hosts), nil
 	case cmd == "/host" && arg != "":
 		hosts, err := c.summaries(db)
 		if err != nil {

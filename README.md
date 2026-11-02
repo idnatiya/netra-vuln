@@ -119,7 +119,7 @@ OpenCode, Antigravity, Cursor, Claude Desktop). Tools: `list_clients`, `list_hos
 
 Alerts: new critical/high per scan, host not reporting / recovered, 3 failed scans in a row, software
 reaching end of life, and a daily summary at `TELEGRAM_DIGEST_AT` (UTC). Commands (read-only):
-`/status`, `/host <hostname>`, `/cve <id>`. Central polls the Bot API; nothing needs to reach central.
+`/status`, `/hosts [client]`, `/host <hostname>`, `/cve <id>`. Central polls the Bot API; nothing needs to reach central.
 
 ## Local development
 

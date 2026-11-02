@@ -307,3 +307,62 @@ func MsgCVE(cve string, rows []CVEHost) string {
 	}
 	return b.String()
 }
+
+// MsgHosts answers /hosts: active hosts per client, worst first.
+func MsgHosts(hosts []HostSummary) string {
+	byClient := map[string][]HostSummary{}
+	var clients []string
+	for _, h := range hosts {
+		if !h.Active() {
+			continue
+		}
+		if _, ok := byClient[h.ClientName]; !ok {
+			clients = append(clients, h.ClientName)
+		}
+		byClient[h.ClientName] = append(byClient[h.ClientName], h)
+	}
+	if len(clients) == 0 {
+		return "No hosts."
+	}
+	const maxLines = 80 // Telegram messages hold 4096 characters
+	var b strings.Builder
+	lines, total := 0, 0
+	for _, c := range clients {
+		list := byClient[c]
+		total += len(list)
+		sortByAttention(list)
+		if lines >= maxLines {
+			continue
+		}
+		if len(clients) > 1 {
+			if b.Len() > 0 {
+				b.WriteString("\n")
+			}
+			fmt.Fprintf(&b, "<b>%s</b> — %d host(s)\n", esc(c), len(list))
+		}
+		for _, h := range list {
+			if lines == maxLines {
+				break
+			}
+			lines++
+			icon := "🟢"
+			switch {
+			case h.StaleScan || h.StaleHeartbeat || h.LastScanStatus == StatusError:
+				icon = "⚠️"
+			case h.OpenCritical > 0:
+				icon = "🔴"
+			case h.OpenHigh > 0:
+				icon = "🟠"
+			}
+			state := attentionReason(h)
+			if state == "" {
+				state = "no open critical/high"
+			}
+			fmt.Fprintf(&b, "%s %s — %s\n", icon, esc(h.Hostname), esc(state))
+		}
+	}
+	if total > lines {
+		fmt.Fprintf(&b, "… %d more", total-lines)
+	}
+	return strings.TrimRight(b.String(), "\n")
+}

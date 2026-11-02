@@ -133,7 +133,7 @@ Rules:
 - Optional (`CENTRAL_TELEGRAM_TOKEN`, compose `TELEGRAM_BOT_TOKEN`). `serve` starts `TelegramUseCase.RunNotifier` (every minute) and `RunBot` (long polling `getUpdates`; no webhook, so no public endpoint). Plain `net/http`, no library; the token is never logged.
 - Chats: `telegram_chats` (CLI `central telegram add-chat <chat_id> [-client <name>]`, `remove-chat`, `list`, `test`). `client_id NULL` = admin chat (every client), else that client only, for alerts and command replies. Unknown chats only get their chat id back.
 - Alerts (`Tick`): new open critical/high in a scan (`first_seen = hosts.last_scan_at`, not for the first scan), host stale / recovered (`MarkStale`), `ErrorStreak` failed scans in a row, new `eol` / `eol_soon` labels, daily digest at `CENTRAL_TELEGRAM_DIGEST_AT` (UTC, default 08:00). `notify_state` keeps `last_scan_id` / `last_digest`; `notify_alerts` keeps raised alerts so each is sent once. The first tick only records state (no backlog).
-- Commands: `/status`, `/host <hostname>`, `/cve <id>`; read-only, no triage. Messages use HTML parse mode; formatters in `entity/telegram_entity.go` escape every value.
+- Commands: `/status`, `/hosts [client]`, `/host <hostname>`, `/cve <id>`; read-only, no triage. Messages use HTML parse mode; formatters in `entity/telegram_entity.go` escape every value.
 
 ## MCP
 - `/mcp` is a read-only MCP server (Streamable HTTP, stateless, JSON responses; official `github.com/modelcontextprotocol/go-sdk`) in `core/internal/delivery/mcp`. Tools `list_clients`, `list_hosts`, `search_findings` (25/page), `host_components` call the same use cases as the admin API and return its models.
