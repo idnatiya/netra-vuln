@@ -22,6 +22,8 @@ import (
 //	CENTRAL_AGENT_VERSION  agent.version (agent release tag /install.sh downloads)
 //	CENTRAL_DASHBOARD_DIR  web.dashboard_dir (built SPA to serve; empty = none)
 //	CENTRAL_ADMIN_ALLOW_CIDRS web.admin_allow_cidrs (dashboard/admin/MCP clients; empty = all)
+//	CENTRAL_TELEGRAM_TOKEN     telegram.token (bot token; empty = Telegram off)
+//	CENTRAL_TELEGRAM_DIGEST_AT telegram.digest_at (daily summary, UTC HH:MM; empty = none)
 func NewViper() *viper.Viper {
 	config := viper.New()
 	config.SetConfigName("config")
@@ -37,6 +39,8 @@ func NewViper() *viper.Viper {
 	config.SetDefault("backup.at", "02:30")
 	config.SetDefault("backup.keep_days", 14)
 	config.SetDefault("eol.url", "https://endoflife.date/api")
+	config.SetDefault("telegram.api_url", "https://api.telegram.org")
+	config.SetDefault("telegram.digest_at", "08:00")
 
 	for key, env := range map[string]string{
 		"database.path":         "CENTRAL_DB",
@@ -51,6 +55,8 @@ func NewViper() *viper.Viper {
 		"agent.version":         "CENTRAL_AGENT_VERSION",
 		"web.dashboard_dir":     "CENTRAL_DASHBOARD_DIR",
 		"web.admin_allow_cidrs": "CENTRAL_ADMIN_ALLOW_CIDRS",
+		"telegram.token":        "CENTRAL_TELEGRAM_TOKEN",
+		"telegram.digest_at":    "CENTRAL_TELEGRAM_DIGEST_AT",
 	} {
 		_ = config.BindEnv(key, env)
 	}

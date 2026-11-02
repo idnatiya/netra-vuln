@@ -109,6 +109,18 @@ OpenCode, Antigravity, Cursor, Claude Desktop). Tools: `list_clients`, `list_hos
 `host_components`; tokens created with **Allow triage** also get `triage_finding` and `triage_component`
 (notes are tagged `[via MCP: <token name>]`). Central makes no LLM calls itself.
 
+## Telegram
+
+1. Create a bot with @BotFather, put its token in `.env` as `TELEGRAM_BOT_TOKEN`, then
+   `docker compose up -d central`.
+2. Send `/start` to the bot (or add it to a group). It replies with the chat id.
+3. `docker compose exec central central telegram add-chat <chat_id>` for an admin chat (all clients),
+   or add `-client <name>` for a chat that sees one client only. `central telegram test` checks delivery.
+
+Alerts: new critical/high per scan, host not reporting / recovered, 3 failed scans in a row, software
+reaching end of life, and a daily summary at `TELEGRAM_DIGEST_AT` (UTC). Commands (read-only):
+`/status`, `/host <hostname>`, `/cve <id>`. Central polls the Bot API; nothing needs to reach central.
+
 ## Local development
 
 ```sh

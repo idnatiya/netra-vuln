@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"text/tabwriter"
@@ -43,6 +44,8 @@ environment (or config.json in ./ or ./core):
   CENTRAL_AGENT_VERSION  agent release tag /install.sh downloads, e.g. v0.3.0
   CENTRAL_DASHBOARD_DIR  built dashboard SPA to serve (the image sets /srv/dashboard)
   CENTRAL_ADMIN_ALLOW_CIDRS  CIDRs allowed to reach the dashboard, admin API and /mcp (empty = all)
+  CENTRAL_TELEGRAM_TOKEN     Telegram bot token: alerts and read-only commands (empty = off)
+  CENTRAL_TELEGRAM_DIGEST_AT daily Telegram summary, UTC HH:MM (default 08:00; empty = none)
 
 commands:
   serve                                    run the API server
@@ -58,6 +61,10 @@ commands:
   admin create <username>                  create a dashboard admin (password from stdin)
   admin passwd <username>                  set a new password (from stdin)
   admin list
+  telegram add-chat <chat_id> [-client <name>]  allow a chat (no -client = admin chat, every client)
+  telegram remove-chat <chat_id>
+  telegram list
+  telegram test                            send a test message to every chat
   healthcheck                              exit 0 if the local server answers /healthz
   version
 `
@@ -117,6 +124,10 @@ func run(args []string, viperConfig *viper.Viper, log *logrus.Logger) error {
 		uc := config.Bootstrap(&config.BootstrapConfig{DB: db, App: app, Log: log, Validate: validate, Config: viperConfig})
 		go config.RunBackups(ctx, db, viperConfig, log)
 		go uc.EOL.RunRefresh(ctx, 24*time.Hour)
+		if uc.Telegram.Enabled() {
+			go uc.Telegram.RunNotifier(ctx)
+			go uc.Telegram.RunBot(ctx)
+		}
 		return serve(ctx, app, viperConfig.GetString("web.addr"), log)
 	}
 
@@ -128,6 +139,8 @@ func run(args []string, viperConfig *viper.Viper, log *logrus.Logger) error {
 		return hostCmd(ctx, uc, args[1], args[2:])
 	case cmd == "admin" && len(args) > 1:
 		return adminCmd(ctx, uc, args[1], args[2:])
+	case cmd == "telegram" && len(args) > 1:
+		return telegramCmd(ctx, uc, args[1], args[2:])
 	}
 	return errUsage
 }
@@ -276,6 +289,48 @@ func adminCmd(ctx context.Context, uc *config.UseCases, sub string, args []strin
 			fmt.Fprintf(tw, "%s\t%s\t%s\n", u.Username, u.CreatedAt.Format(time.RFC3339), ts(u.DisabledAt))
 		}
 		return tw.Flush()
+	}
+	return errUsage
+}
+
+func telegramCmd(ctx context.Context, uc *config.UseCases, sub string, args []string) error {
+	fs := flag.NewFlagSet("telegram "+sub, flag.ContinueOnError)
+	client := fs.String("client", "", "client name")
+	pos, err := parseInterspersed(fs, args)
+	if err != nil {
+		return errUsage
+	}
+	chatID := func() (int64, error) { return strconv.ParseInt(pos[0], 10, 64) }
+	switch {
+	case sub == "add-chat" && len(pos) == 1:
+		id, err := chatID()
+		if err != nil {
+			return errUsage
+		}
+		return uc.Telegram.AddChat(ctx, id, *client)
+	case sub == "remove-chat" && len(pos) == 1:
+		id, err := chatID()
+		if err != nil {
+			return errUsage
+		}
+		return uc.Telegram.RemoveChat(ctx, id)
+	case sub == "list" && len(pos) == 0:
+		chats, err := uc.Telegram.Chats(ctx)
+		if err != nil {
+			return err
+		}
+		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+		fmt.Fprintln(tw, "CHAT_ID\tCLIENT\tADDED")
+		for _, c := range chats {
+			name := "(admin: all clients)"
+			if c.Client != nil {
+				name = c.Client.Name
+			}
+			fmt.Fprintf(tw, "%d\t%s\t%s\n", c.ChatID, name, c.CreatedAt.Format(time.RFC3339))
+		}
+		return tw.Flush()
+	case sub == "test" && len(pos) == 0:
+		return uc.Telegram.SendTest(ctx)
 	}
 	return errUsage
 }

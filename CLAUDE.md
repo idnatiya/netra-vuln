@@ -129,6 +129,12 @@ Rules:
 - `serve` refreshes `eol_cycles` from endoflife.date (`CENTRAL_EOL_URL`, default `https://endoflife.date/api`) on start and every 24 h; a failed product keeps its last data. Names map to products in `entity.EOLProducts`; the cycle is the longest one that prefixes the version at a dot (`entity.MatchCycle`); status `eol` / `soon` (≤ 90 days) / `supported` / `unknown`.
 - Hosts carry `eol` / `eol_soon` labels (e.g. `php 7.4`), shown as host issues (`hostIssues`); EOL counts as "attention". `GET /api/admin/v1/hosts/:id/software` backs the host page's Software tab.
 
+## Telegram
+- Optional (`CENTRAL_TELEGRAM_TOKEN`, compose `TELEGRAM_BOT_TOKEN`). `serve` starts `TelegramUseCase.RunNotifier` (every minute) and `RunBot` (long polling `getUpdates`; no webhook, so no public endpoint). Plain `net/http`, no library; the token is never logged.
+- Chats: `telegram_chats` (CLI `central telegram add-chat <chat_id> [-client <name>]`, `remove-chat`, `list`, `test`). `client_id NULL` = admin chat (every client), else that client only, for alerts and command replies. Unknown chats only get their chat id back.
+- Alerts (`Tick`): new open critical/high in a scan (`first_seen = hosts.last_scan_at`, not for the first scan), host stale / recovered (`MarkStale`), `ErrorStreak` failed scans in a row, new `eol` / `eol_soon` labels, daily digest at `CENTRAL_TELEGRAM_DIGEST_AT` (UTC, default 08:00). `notify_state` keeps `last_scan_id` / `last_digest`; `notify_alerts` keeps raised alerts so each is sent once. The first tick only records state (no backlog).
+- Commands: `/status`, `/host <hostname>`, `/cve <id>`; read-only, no triage. Messages use HTML parse mode; formatters in `entity/telegram_entity.go` escape every value.
+
 ## MCP
 - `/mcp` is a read-only MCP server (Streamable HTTP, stateless, JSON responses; official `github.com/modelcontextprotocol/go-sdk`) in `core/internal/delivery/mcp`. Tools `list_clients`, `list_hosts`, `search_findings` (25/page), `host_components` call the same use cases as the admin API and return its models.
 - Auth: `Authorization: Bearer <mcp token>` (`mcp_tokens`, SHA-256 hash, bound to the admin who created it, `last_used_at` at most once a minute, revoke = `revoked_at`). Own rate limit (`Limits.McpMax`, default 600/min per admin and in total), separate from the agent limits; hits are logged (`MCP rate limited`). `search_findings` takes `page_size` 1-100 (default 25). `/mcp` is behind `ADMIN_ALLOW_CIDRS`.

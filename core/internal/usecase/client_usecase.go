@@ -162,6 +162,9 @@ func (c *ClientUseCase) Delete(ctx context.Context, name string) error {
 	if err := tx.Where("client_id = ?", client.ID).Delete(&entity.EnrollToken{}).Error; err != nil {
 		return fiber.ErrInternalServerError
 	}
+	if err := tx.Where("client_id = ?", client.ID).Delete(&entity.TelegramChat{}).Error; err != nil {
+		return fiber.ErrInternalServerError
+	}
 	if err := tx.Delete(client).Error; err != nil {
 		return fiber.ErrInternalServerError
 	}

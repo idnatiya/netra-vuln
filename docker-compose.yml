@@ -28,6 +28,9 @@ services:
       # Daily consistent copy into /data/backups (UTC time), kept this many days.
       CENTRAL_BACKUP_AT: ${BACKUP_AT:-02:30}
       CENTRAL_BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      # Telegram alerts and read-only bot commands; empty token = off.
+      CENTRAL_TELEGRAM_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      CENTRAL_TELEGRAM_DIGEST_AT: ${TELEGRAM_DIGEST_AT:-08:00}
     volumes:
       - central_data:/data
     healthcheck:

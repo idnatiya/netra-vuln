@@ -46,6 +46,9 @@ func (c *HostUseCase) Delete(ctx context.Context, id int64) error {
 	if err := tx.Where("host_id = ?", id).Delete(&entity.Software{}).Error; err != nil {
 		return fiber.ErrInternalServerError
 	}
+	if err := tx.Where("host_id = ?", id).Delete(&entity.NotifyAlert{}).Error; err != nil {
+		return fiber.ErrInternalServerError
+	}
 	if err := tx.Delete(host).Error; err != nil {
 		return fiber.ErrInternalServerError
 	}

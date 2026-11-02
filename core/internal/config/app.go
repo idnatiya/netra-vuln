@@ -36,6 +36,7 @@ type UseCases struct {
 	AdminUser *usecase.AdminUserUseCase
 	McpToken  *usecase.McpTokenUseCase
 	EOL       *usecase.EOLUseCase
+	Telegram  *usecase.TelegramUseCase
 }
 
 // Bootstrap wires repositories, use cases, controllers, middleware, and routes.
@@ -67,6 +68,11 @@ func Bootstrap(config *BootstrapConfig) *UseCases {
 			eolRepository, softwareRepository, hostRepository),
 	}
 	uc.Host.EOL = uc.EOL
+	uc.Telegram = usecase.NewTelegramUseCase(config.DB, config.Log, config.Config.GetString("telegram.token"),
+		config.Config.GetString("telegram.api_url"), repository.NewTelegramRepository(config.Log), hostRepository, uc.EOL)
+	uc.Telegram.PublicURL = config.Config.GetString("web.public_url")
+	uc.Telegram.AgentVersion = config.Config.GetString("agent.version")
+	uc.Telegram.DigestAt = config.Config.GetString("telegram.digest_at")
 	if config.App == nil {
 		return uc
 	}
